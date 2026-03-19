@@ -261,7 +261,7 @@ function setupUI(shadow) {
         setRunningState(shadow, false);
     };
 }
-
+ 
 function setRunningState(shadow, running) {
     shadow.querySelector('#watch-note').style.display = running ? 'block' : 'none';
     shadow.querySelector('#act-stop').style.display   = running ? 'block' : 'none';
