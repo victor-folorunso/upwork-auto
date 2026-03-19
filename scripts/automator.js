@@ -36,9 +36,7 @@ async function safeDelay(min, max) {
 }
 
 // ──────────────────────────────────────────────────────────────
-// Resume state — saved to chrome.storage so refresh-safe
-// Only written when a job is actively running.
-// Never read on page load — only read when user clicks a run button.
+// Resume state
 // ──────────────────────────────────────────────────────────────
 const STORAGE_KEY = 'wizard_job';
 
@@ -57,7 +55,7 @@ function clearJobState() {
 // ──────────────────────────────────────────────────────────────
 // DOM helpers
 // ──────────────────────────────────────────────────────────────
-function waitForEl(selector, timeout = 8000) {
+function waitForEl(selector, timeout = 15000) {
     return new Promise((resolve, reject) => {
         const el = document.querySelector(selector);
         if (el) return resolve(el);
@@ -72,23 +70,41 @@ function waitForEl(selector, timeout = 8000) {
     });
 }
 
-// Select a <select> option by matching visible text (case-insensitive, partial match)
-async function humanSelect(selectEl, targetText) {
-    const target = targetText.trim().toLowerCase();
-    const option = Array.from(selectEl.options).find(o =>
-        o.text.toLowerCase().includes(target) || o.value.toLowerCase().includes(target)
-    );
-    if (!option) throw new Error(`Option not found in select: "${targetText}"`);
+// Type into a typeahead-fake input and pick the first dropdown option if one appears.
+// Falls back gracefully if no dropdown appears — just leaves the typed value.
+async function typeAndPickFirst(input, text) {
+    await humanType(input, text);
+    await randomDelay(400, 800);
 
-    const nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLSelectElement.prototype, 'value')?.set;
-    if (nativeSetter) {
-        nativeSetter.call(selectEl, option.value);
-    } else {
-        selectEl.value = option.value;
+    // Look for a visible dropdown menu item near this input
+    const menu = document.querySelector('.air3-menu-list [role="option"], .air3-menu-list li');
+    if (menu) {
+        await humanClick(menu);
+        await randomDelay(200, 400);
     }
+    // If no dropdown appears, the typed value stays — acceptable for title/company
+}
 
-    selectEl.dispatchEvent(new Event('change', { bubbles: true }));
-    await randomDelay(200, 500);
+// Click a custom air3-dropdown toggle and pick the option whose text matches value
+async function pickDropdownOption(toggleSelector, value) {
+    const toggle = document.querySelector(toggleSelector);
+    if (!toggle) return; // skip silently if not found
+
+    await humanClick(toggle);
+    await randomDelay(400, 800);
+
+    // Options appear in a ul after clicking — find by text content
+    const options = Array.from(document.querySelectorAll('[role="option"], .air3-menu-list li'));
+    const target  = options.find(o => o.textContent.trim().toLowerCase().includes(value.toLowerCase()));
+
+    if (target) {
+        await humanClick(target);
+        await randomDelay(200, 400);
+    } else {
+        // Close the dropdown without selecting — value stays as default
+        document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+        await randomDelay(200, 400);
+    }
 }
 
 // ──────────────────────────────────────────────────────────────
@@ -107,20 +123,20 @@ const SEL = {
     otherExpConfirmDelete: null,  // TODO: confirm button on delete modal
 
     // ── Employment History ─────────────────────────────────────
-    employmentAddBtn:        'button[aria-label="Add employment history"]',
-    employmentCompanyInput:  'input#company',
-    employmentCityInput:     'input#city',
-    employmentCountrySelect: 'select#country',
-    employmentMonthFrom:     'select#month-from',
-    employmentYearFrom:      'select#year-from',
-    employmentDescInput:     'textarea#description',
+    employmentAddBtn:         'button[aria-label="Add employment history"]',
+    employmentCompanyInput:   'input.air3-typeahead-input-main',       // typeahead, type + pick
+    employmentCityInput:      'input#city',                             // plain input
+    employmentCountryInput:   'input[aria-labelledby="countryLabel"]',  // fake typeahead, type + pick
+    employmentTitleInput:     'input[aria-labelledby="jobTitleLabel"]', // fake typeahead, type + pick
+    employmentMonthToggle:    '#startMonth [data-test="dropdown-toggle"]',
+    employmentYearToggle:     '#startYear  [data-test="dropdown-toggle"]',
+    employmentDescInput:      'textarea#description',
+    employmentSaveBtn:        '.air3-modal-footer button.air3-btn-primary',
 
-    employmentTitleInput:    null,  // TODO: job title input
-    employmentSaveBtn:       null,  // TODO: save button inside employment modal
-    employmentItems:         null,  // TODO: wrapper element per entry (for count check)
-    employmentDeleteBtn:     'button[aria-label*="Delete"][aria-label*="Employment history item"]',
-    employmentConfirmDelete: null,  // TODO: confirm button on delete modal
-    employmentEditBtn:       'button[aria-label*="Edit"][aria-label*="Employment history item"]', // future use
+    employmentItems:          null,  // TODO: wrapper element per entry (for count check)
+    employmentDeleteBtn:      'button[aria-label*="Delete"][aria-label*="Employment history item"]',
+    employmentConfirmDelete:  null,  // TODO: confirm button on delete modal
+    employmentEditBtn:        'button[aria-label*="Edit"][aria-label*="Employment history item"]', // future use
 
     // ── Saved for future use ──────────────────────────────────
     // certificateDeleteBtn: 'button[aria-label*="Delete certificate"]',
@@ -128,9 +144,7 @@ const SEL = {
 };
 
 // ──────────────────────────────────────────────────────────────
-// Build the full Other Experience description:
-// entry description + 2 blank lines + loose 1000 keywords
-// Upwork will truncate at their field limit — we just supply the full string.
+// Build the full Other Experience description
 // ──────────────────────────────────────────────────────────────
 function buildOtherExpDescription(description, loose1000) {
     if (!loose1000 || !loose1000.trim()) return description;
@@ -138,7 +152,7 @@ function buildOtherExpDescription(description, loose1000) {
 }
 
 // ──────────────────────────────────────────────────────────────
-// Split "City, Country" string into parts
+// Split "City, Country" string
 // e.g. "Austin, United States" → { city: "Austin", country: "United States" }
 // ──────────────────────────────────────────────────────────────
 function splitLocation(locationStr) {
@@ -163,9 +177,6 @@ function countEmploymentEntries() {
     return document.querySelectorAll(SEL.employmentItems).length;
 }
 
-// ──────────────────────────────────────────────────────────────
-// Get the Other Exp add button (tries main label, falls back to alt)
-// ──────────────────────────────────────────────────────────────
 function getOtherExpAddBtn() {
     return document.querySelector(SEL.otherExpAddBtn)
         || document.querySelector(SEL.otherExpAddBtnAlt);
@@ -182,8 +193,8 @@ async function deleteAllOtherExperiences(notify) {
         if (!btn) break;
         await humanClick(btn);
         await safeDelay(400, 800);
-        const confirm = SEL.otherExpConfirmDelete ? document.querySelector(SEL.otherExpConfirmDelete) : null;
-        if (confirm) { await humanClick(confirm); await safeDelay(600, 1200); }
+        const confirmBtn = SEL.otherExpConfirmDelete ? document.querySelector(SEL.otherExpConfirmDelete) : null;
+        if (confirmBtn) { await humanClick(confirmBtn); await safeDelay(600, 1200); }
     }
     notify('Existing entries cleared.', 'warning');
 }
@@ -199,15 +210,14 @@ async function deleteAllEmploymentEntries(notify) {
         if (!btn) break;
         await humanClick(btn);
         await safeDelay(400, 800);
-        const confirm = SEL.employmentConfirmDelete ? document.querySelector(SEL.employmentConfirmDelete) : null;
-        if (confirm) { await humanClick(confirm); await safeDelay(600, 1200); }
+        const confirmBtn = SEL.employmentConfirmDelete ? document.querySelector(SEL.employmentConfirmDelete) : null;
+        if (confirmBtn) { await humanClick(confirmBtn); await safeDelay(600, 1200); }
     }
     notify('Existing entries cleared.', 'warning');
 }
 
 // ──────────────────────────────────────────────────────────────
 // Add single other experience entry
-// loose1000 is appended to the description before typing
 // ──────────────────────────────────────────────────────────────
 async function addOneOtherExperience(entry, loose1000) {
     const addBtn = getOtherExpAddBtn();
@@ -220,7 +230,6 @@ async function addOneOtherExperience(entry, loose1000) {
     await safeDelay(300, 700);
 
     const fullDescription = buildOtherExpDescription(entry.description, loose1000);
-
     const descInput = await waitForEl(SEL.otherExpDescInput);
     await humanType(descInput, fullDescription);
     await safeDelay(400, 900);
@@ -234,45 +243,47 @@ async function addOneOtherExperience(entry, loose1000) {
 // Add single employment entry
 // ──────────────────────────────────────────────────────────────
 async function addOneEmploymentEntry(entry) {
+    // Open the modal
     const addBtn = await waitForEl(SEL.employmentAddBtn);
     await humanClick(addBtn);
-    await safeDelay(600, 1200);
+    await safeDelay(800, 1500);
 
+    // Company — typeahead: type and pick first suggestion if any
     const companyInput = await waitForEl(SEL.employmentCompanyInput);
-    await humanType(companyInput, entry.company);
+    await typeAndPickFirst(companyInput, entry.company);
     await safeDelay(300, 600);
 
-    const { city, country } = splitLocation(entry.location);
-
+    // City — plain input
     const cityInput = await waitForEl(SEL.employmentCityInput);
-    await humanType(cityInput, city);
+    await humanType(cityInput, entry.city || splitLocation(entry.location).city);
     await safeDelay(300, 600);
 
-    const countrySelect = await waitForEl(SEL.employmentCountrySelect);
-    await humanSelect(countrySelect, country);
+    // Country — fake typeahead: type and pick first suggestion
+    const countryInput = await waitForEl(SEL.employmentCountryInput);
+    const { country } = splitLocation(entry.location);
+    await typeAndPickFirst(countryInput, country);
     await safeDelay(300, 600);
 
-    if (SEL.employmentTitleInput) {
-        const titleInput = await waitForEl(SEL.employmentTitleInput);
-        await humanType(titleInput, entry.title);
-        await safeDelay(300, 600);
-    }
+    // Job Title — fake typeahead: type and pick first suggestion
+    const titleInput = await waitForEl(SEL.employmentTitleInput);
+    await typeAndPickFirst(titleInput, entry.title);
+    await safeDelay(300, 600);
 
-    const monthSelect = document.querySelector(SEL.employmentMonthFrom);
-    if (monthSelect) { await humanSelect(monthSelect, 'Jan'); await safeDelay(200, 400); }
+    // Month — custom dropdown: click toggle, pick option
+    await pickDropdownOption(SEL.employmentMonthToggle, 'Jan');
+    await safeDelay(300, 600);
 
-    const yearSelect = document.querySelector(SEL.employmentYearFrom);
-    if (yearSelect) {
-        const currentYear = String(new Date().getFullYear());
-        await humanSelect(yearSelect, currentYear);
-        await safeDelay(200, 400);
-    }
+    // Year — custom dropdown: click toggle, pick current year
+    const currentYear = String(new Date().getFullYear());
+    await pickDropdownOption(SEL.employmentYearToggle, currentYear);
+    await safeDelay(300, 600);
 
+    // Description
     const descInput = await waitForEl(SEL.employmentDescInput);
     await humanType(descInput, entry.description);
     await safeDelay(400, 900);
 
-    if (!SEL.employmentSaveBtn) throw new Error('employmentSaveBtn selector not set yet — TODO');
+    // Save
     const saveBtn = await waitForEl(SEL.employmentSaveBtn);
     await humanClick(saveBtn);
     await safeDelay(700, 1400);
@@ -280,7 +291,6 @@ async function addOneEmploymentEntry(entry) {
 
 // ──────────────────────────────────────────────────────────────
 // Run: Other Experiences (with resume support)
-// loose1000 is passed through to each entry's description
 // ──────────────────────────────────────────────────────────────
 async function runOtherExperiences(parsedData, notify, onDone, resumeFromIndex = 0) {
     if (!parsedData.otherExp.length) {
@@ -289,7 +299,6 @@ async function runOtherExperiences(parsedData, notify, onDone, resumeFromIndex =
     }
 
     const loose1000 = parsedData.loose1000 || '';
-
     if (!loose1000.trim()) {
         notify('Warning: No Loose 1000 keywords found — descriptions will be saved without keyword block.', 'warning');
     }
@@ -310,14 +319,7 @@ async function runOtherExperiences(parsedData, notify, onDone, resumeFromIndex =
         const total = parsedData.otherExp.length;
 
         for (let i = resumeFromIndex; i < total; i++) {
-            // Save loose1000 in job state so resume has it too
-            await saveJobState({
-                type:     'other_exp',
-                index:    i,
-                entries:  parsedData.otherExp,
-                loose1000
-            });
-
+            await saveJobState({ type: 'other_exp', index: i, entries: parsedData.otherExp, loose1000 });
             await safeDelay(500, 1200);
             await addOneOtherExperience(parsedData.otherExp[i], loose1000);
             notify(`Other Experience: ${i + 1} / ${total} added`, 'success');
