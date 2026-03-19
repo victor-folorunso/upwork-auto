@@ -124,7 +124,7 @@ async function mountUI(shadow) {
 const THEME = {
     success: { bg: '#112911', color: '#72f272', border: '#1e4a1e' },
     warning: { bg: '#292911', color: '#f2f272', border: '#4a4a1e' },
-    error: { bg: '#2d1a1a', color: '#ff6b6b', border: '#4a2020' }
+    error:   { bg: '#2d1a1a', color: '#ff6b6b', border: '#4a2020' }
 };
 
 function notify(shadow, text, type = 'success') {
@@ -261,9 +261,20 @@ function setupUI(shadow) {
     };
 }
 
+// Fix #7: disable run buttons while running so they can't be double-triggered
 function setRunningState(shadow, running) {
     shadow.querySelector('#watch-note').style.display = running ? 'block' : 'none';
-    shadow.querySelector('#act-stop').style.display = running ? 'block' : 'none';
+    shadow.querySelector('#act-stop').style.display   = running ? 'block' : 'none';
+
+    const runOtherExp  = shadow.querySelector('#act-run-other-exp');
+    const runEmploy    = shadow.querySelector('#act-run-employment');
+
+    runOtherExp.disabled = running;
+    runEmploy.disabled   = running;
+    runOtherExp.style.opacity = running ? '0.45' : '';
+    runEmploy.style.opacity   = running ? '0.45' : '';
+    runOtherExp.style.cursor  = running ? 'not-allowed' : '';
+    runEmploy.style.cursor    = running ? 'not-allowed' : '';
 }
 
 // ──────────────────────────────────────────────────────────────

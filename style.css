@@ -55,7 +55,7 @@
   cursor: pointer;
   transition: color .2s, border-color .2s;
   white-space: nowrap;
-  flex-shrink: 0;
+  flex: 0 0 auto;  /* Fix: override global button flex:1 so it only takes content width */
   width: auto;
 }
 

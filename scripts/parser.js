@@ -1,5 +1,7 @@
 // parser.js.  parse the structured AI output into usable data objects
 
+const OTHER_EXP_DESC_LIMIT = 300;
+
 // Master parse: extracts all four blocks from the raw AI text
 function parseAIOutput(rawText) {
     const result = {
@@ -80,6 +82,12 @@ function parseOtherExpEntries(blockContent, errors) {
         if (entry['title'].length > 70) {
             errors.push(`Other Exp entry ${i}: title too long (${entry['title'].length}/70) – trimmed`);
             entry['title'] = entry['title'].substring(0, 70);
+        }
+
+        // Fix #6: enforce 300-char description limit at parse time
+        if (entry['description'].length > OTHER_EXP_DESC_LIMIT) {
+            errors.push(`Other Exp entry ${i}: description too long (${entry['description'].length}/${OTHER_EXP_DESC_LIMIT}) – trimmed`);
+            entry['description'] = entry['description'].substring(0, OTHER_EXP_DESC_LIMIT);
         }
 
         entries.push({

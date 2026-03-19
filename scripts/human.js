@@ -16,9 +16,9 @@ function isInViewport(el) {
 }
 
 // Scroll toward an element only if it isn't already visible.
-// Scrolls the page.  not the modal (modal fields are always in viewport).
+// Checks AUTO.aborted between scroll steps so Stop interrupts immediately.
 async function humanScroll(el) {
-    if (isInViewport(el)) return; // already visible.  skip scroll entirely
+    if (isInViewport(el)) return;
 
     const targetY = el.getBoundingClientRect().top + window.scrollY - (window.innerHeight / 2);
     const startY = window.scrollY;
@@ -26,6 +26,7 @@ async function humanScroll(el) {
     const steps = 8 + Math.floor(Math.random() * 6);
 
     for (let i = 1; i <= steps; i++) {
+        if (AUTO.aborted) throw new Error('ABORTED');  // Fix #5: abort mid-scroll
         const p = i / steps;
         const eased = p < 0.5 ? 2 * p * p : 1 - Math.pow(-2 * p + 2, 2) / 2;
         window.scrollTo({ top: startY + distance * eased, behavior: 'instant' });
@@ -53,7 +54,7 @@ function triggerInputEvent(el, value) {
 }
 
 // Type into a field character by character.
-// Fast enough to feel like a quick human typist, with occasional natural pauses.
+// Checks AUTO.aborted on every character so Stop interrupts immediately.
 async function humanType(el, text) {
     await humanScroll(el);
     el.focus();
@@ -64,20 +65,32 @@ async function humanType(el, text) {
     let current = '';
 
     for (const char of text) {
+        if (AUTO.aborted) throw new Error('ABORTED');  // Fix #2: abort mid-type
+
         current += char;
         triggerInputEvent(el, current);
 
         const r = Math.random();
         if (r < 0.03) {
-            await randomDelay(250, 500); // rare thinking pause
+            await randomDelay(250, 500);
         } else if (r < 0.10) {
-            await randomDelay(60, 130);  // occasional brief pause
+            await randomDelay(60, 130);
         } else {
-            await randomDelay(8, 25);    // fast typist baseline
+            await randomDelay(8, 25);
         }
     }
 
     await randomDelay(200, 500);
+}
+
+// Paste text into a field instantly (no character-by-character delay).
+// Used for long fields like Other Experience description.
+async function humanPaste(el, text) {
+    await humanScroll(el);
+    el.focus();
+    await randomDelay(60, 150);
+    triggerInputEvent(el, text);  // Fix #3: instant paste
+    await randomDelay(200, 400);
 }
 
 // Click an element, scrolling to it first only if needed
