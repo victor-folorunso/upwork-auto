@@ -1,28 +1,28 @@
-// main.js — orchestrator: shadow DOM, UI wiring, prompt storage
+// main.js.  orchestrator: shadow DOM, UI wiring, prompt storage
 
-const ROOT_ID    = 'upwork-wizard-root';
+const ROOT_ID = 'upwork-wizard-root';
 const PANEL_WIDTH = '380px';
 
 const AI_PROMPT = `You are a keyword intelligence assistant helping a Flutter and Supabase freelancer optimize their Upwork profile. The overview is already written and will not change. Your job is to analyze top-ranking Upwork profiles and extract everything useful for two sections: Portfolio and Other Experiences.
 
 Maintain four datasets across all profiles. Never reset unless I say RESET.
 
-DATASET 1 — CORE 30
+DATASET 1.  CORE 30
 The 30 highest-value keywords across all profiles. Weighted by position: title = 3, overview = 2, skills = 2, portfolio = 1. Positions 1 and 2 are permanently locked:
 Flutter
 Supabase
 Positions 3 to 30 are re-ranked after every new profile.
 
-DATASET 2 — LOOSE 1000
+DATASET 2.  LOOSE 1000
 Every keyword, tool, framework, platform, integration, and service phrase discovered. Deduplicated and continuously growing. Output format is all keywords merged together separated by commas only with no category divisions.
 
-DATASET 3 — PORTFOLIO INTELLIGENCE
+DATASET 3.  PORTFOLIO INTELLIGENCE
 Track two things from portfolio sections:
 Project title patterns: how top freelancers name their portfolio pieces
 Description patterns: how they describe what was built, what tech was used, and what outcome was achieved
 Store real examples and extract the sentence structures behind them.
 
-DATASET 4 — OTHER EXPERIENCE INTELLIGENCE
+DATASET 4.  OTHER EXPERIENCE INTELLIGENCE
 Track two things from Other Experience sections:
 Entry title patterns: how top freelancers label their experience entries
 Description patterns: how they describe responsibilities and deliverables using searchable language
@@ -40,7 +40,7 @@ On the 10th profile of each batch, instead of saying "Digested", output:
 These queries should be based on patterns and keywords discovered so far, targeting angles not yet well represented in the dataset
 
 WHEN I SAY GENERATE
-Produce all output in the following structured format exactly. Use the block tags and field prefixes precisely as shown — no deviations, no extra commentary between blocks.
+Produce all output in the following structured format exactly. Use the block tags and field prefixes precisely as shown.  no deviations, no extra commentary between blocks.
 
 [BLOCK:CORE_30]
 Flutter, Supabase, ...
@@ -124,7 +124,7 @@ async function mountUI(shadow) {
 const THEME = {
     success: { bg: '#112911', color: '#72f272', border: '#1e4a1e' },
     warning: { bg: '#292911', color: '#f2f272', border: '#4a4a1e' },
-    error:   { bg: '#2d1a1a', color: '#ff6b6b', border: '#4a2020' }
+    error: { bg: '#2d1a1a', color: '#ff6b6b', border: '#4a2020' }
 };
 
 function notify(shadow, text, type = 'success') {
@@ -133,9 +133,9 @@ function notify(shadow, text, type = 'success') {
     if (!box || !msg) return;
 
     const theme = THEME[type] || THEME.warning;
-    box.style.display        = 'block';
-    box.style.background     = theme.bg;
-    box.style.color          = theme.color;
+    box.style.display = 'block';
+    box.style.background = theme.bg;
+    box.style.color = theme.color;
     box.style.borderTopColor = theme.border;
 
     msg.innerHTML = Array.isArray(text) ? text.join('<br>') : text;
@@ -159,7 +159,7 @@ function setupUI(shadow) {
         navigator.clipboard.writeText(AI_PROMPT).then(() => {
             n('✅ Prompt copied to clipboard. Paste it into your AI to get started.', 'success');
         }).catch(() => {
-            n('Copy failed — please allow clipboard access.', 'error');
+            n('Copy failed.  please allow clipboard access.', 'error');
         });
     };
 
@@ -256,14 +256,14 @@ function setupUI(shadow) {
     // Stop
     shadow.querySelector('#act-stop').onclick = () => {
         stopAutomation();
-        n('Automation stopped. Progress saved — click the run button to resume.', 'warning');
+        n('Automation stopped. Progress saved.  click the run button to resume.', 'warning');
         setRunningState(shadow, false);
     };
 }
 
 function setRunningState(shadow, running) {
     shadow.querySelector('#watch-note').style.display = running ? 'block' : 'none';
-    shadow.querySelector('#act-stop').style.display   = running ? 'block' : 'none';
+    shadow.querySelector('#act-stop').style.display = running ? 'block' : 'none';
 }
 
 // ──────────────────────────────────────────────────────────────

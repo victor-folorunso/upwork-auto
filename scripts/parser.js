@@ -1,29 +1,29 @@
-// parser.js — parse the structured AI output into usable data objects
+// parser.js.  parse the structured AI output into usable data objects
 
 // Master parse: extracts all four blocks from the raw AI text
 function parseAIOutput(rawText) {
     const result = {
-        core30:     null,
+        core30: null,
         employment: [],
-        otherExp:   [],
-        loose1000:  null,
-        errors:     []
+        otherExp: [],
+        loose1000: null,
+        errors: []
     };
 
     const blockRegex = /\[BLOCK:([A-Z0-9_]+)\]([\s\S]*?)\[\/BLOCK:\1\]/g;
     let match;
 
     while ((match = blockRegex.exec(rawText)) !== null) {
-        const name    = match[1];
+        const name = match[1];
         const content = match[2].trim();
 
-        if (name === 'CORE_30')    result.core30    = content;
+        if (name === 'CORE_30') result.core30 = content;
         else if (name === 'LOOSE_1000') result.loose1000 = content;
         else if (name === 'EMPLOYMENT') result.employment = parseEmploymentEntries(content, result.errors);
-        else if (name === 'OTHER_EXP')  result.otherExp   = parseOtherExpEntries(content, result.errors);
+        else if (name === 'OTHER_EXP') result.otherExp = parseOtherExpEntries(content, result.errors);
     }
 
-    if (!result.core30     && !result.employment.length &&
+    if (!result.core30 && !result.employment.length &&
         !result.otherExp.length && !result.loose1000) {
         result.errors.push('No recognizable blocks found. Make sure you pasted the full AI output.');
     }
@@ -40,7 +40,7 @@ function parseEmploymentEntries(blockContent, errors) {
 
     while ((match = entryRegex.exec(blockContent)) !== null) {
         i++;
-        const raw   = match[1].trim();
+        const raw = match[1].trim();
         const entry = parseFieldLines(raw);
 
         const missing = ['company', 'location', 'title', 'description'].filter(k => !entry[k]);
@@ -50,9 +50,9 @@ function parseEmploymentEntries(blockContent, errors) {
         }
 
         entries.push({
-            company:     entry['company'],
-            location:    entry['location'],
-            title:       entry['title'],
+            company: entry['company'],
+            location: entry['location'],
+            title: entry['title'],
             description: entry['description']
         });
     }
@@ -69,7 +69,7 @@ function parseOtherExpEntries(blockContent, errors) {
 
     while ((match = entryRegex.exec(blockContent)) !== null) {
         i++;
-        const raw   = match[1].trim();
+        const raw = match[1].trim();
         const entry = parseFieldLines(raw);
 
         if (!entry['title'] || !entry['description']) {
@@ -83,7 +83,7 @@ function parseOtherExpEntries(blockContent, errors) {
         }
 
         entries.push({
-            title:       entry['title'],
+            title: entry['title'],
             description: entry['description']
         });
     }
@@ -98,7 +98,7 @@ function parseFieldLines(text) {
     for (const line of lines) {
         const sep = line.indexOf('::');
         if (sep === -1) continue;
-        const key   = line.substring(0, sep).trim().toLowerCase();
+        const key = line.substring(0, sep).trim().toLowerCase();
         const value = line.substring(sep + 2).trim();
         obj[key] = value;
     }

@@ -1,4 +1,4 @@
-// human.js — human-like timing and interaction utilities
+// human.js.  human-like timing and interaction utilities
 
 function randomDelay(min, max) {
     return new Promise(r => setTimeout(r, min + Math.random() * (max - min)));
@@ -8,25 +8,25 @@ function randomDelay(min, max) {
 function isInViewport(el) {
     const rect = el.getBoundingClientRect();
     return (
-        rect.top    >= 0 &&
+        rect.top >= 0 &&
         rect.bottom <= (window.innerHeight || document.documentElement.clientHeight) &&
-        rect.left   >= 0 &&
-        rect.right  <= (window.innerWidth  || document.documentElement.clientWidth)
+        rect.left >= 0 &&
+        rect.right <= (window.innerWidth || document.documentElement.clientWidth)
     );
 }
 
 // Scroll toward an element only if it isn't already visible.
-// Scrolls the page — not the modal (modal fields are always in viewport).
+// Scrolls the page.  not the modal (modal fields are always in viewport).
 async function humanScroll(el) {
-    if (isInViewport(el)) return; // already visible — skip scroll entirely
+    if (isInViewport(el)) return; // already visible.  skip scroll entirely
 
-    const targetY  = el.getBoundingClientRect().top + window.scrollY - (window.innerHeight / 2);
-    const startY   = window.scrollY;
+    const targetY = el.getBoundingClientRect().top + window.scrollY - (window.innerHeight / 2);
+    const startY = window.scrollY;
     const distance = targetY - startY;
-    const steps    = 8 + Math.floor(Math.random() * 6);
+    const steps = 8 + Math.floor(Math.random() * 6);
 
     for (let i = 1; i <= steps; i++) {
-        const p     = i / steps;
+        const p = i / steps;
         const eased = p < 0.5 ? 2 * p * p : 1 - Math.pow(-2 * p + 2, 2) / 2;
         window.scrollTo({ top: startY + distance * eased, behavior: 'instant' });
         await randomDelay(40, 90);
@@ -48,7 +48,7 @@ function triggerInputEvent(el, value) {
         el.value = value;
     }
 
-    el.dispatchEvent(new Event('input',  { bubbles: true }));
+    el.dispatchEvent(new Event('input', { bubbles: true }));
     el.dispatchEvent(new Event('change', { bubbles: true }));
 }
 
