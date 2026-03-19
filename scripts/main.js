@@ -190,7 +190,6 @@ function setupUI(shadow) {
     };
 
     // ── Run Other Experiences ──
-    // Checks for a saved interrupted job first. Only fires when user clicks.
     shadow.querySelector('#act-run-other-exp').onclick = async () => {
         if (AUTO.running) { n('Automation is already running.', 'warning'); return; }
 
@@ -206,7 +205,7 @@ function setupUI(shadow) {
             if (resume) {
                 setRunningState(shadow, true);
                 runOtherExperiences(
-                    { otherExp: saved.entries, employment: [] },
+                    { otherExp: saved.entries, employment: [], loose1000: saved.loose1000 || '' },
                     (text, type) => n(text, type),
                     () => setRunningState(shadow, false),
                     saved.index
@@ -261,7 +260,7 @@ function setupUI(shadow) {
         setRunningState(shadow, false);
     };
 }
- 
+
 function setRunningState(shadow, running) {
     shadow.querySelector('#watch-note').style.display = running ? 'block' : 'none';
     shadow.querySelector('#act-stop').style.display   = running ? 'block' : 'none';

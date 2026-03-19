@@ -95,7 +95,7 @@ async function humanSelect(selectEl, targetText) {
 // SELECTORS
 // ──────────────────────────────────────────────────────────────
 const SEL = {
-    // ── Other Experiences ──────────────────────────────────────
+    // ── Other Experiences ─────────────────────────────────────
     otherExpAddBtn:        'button[aria-label="Add other experiences"]',
     otherExpAddBtnAlt:     'button[aria-label="Add an experience"]',
     otherExpTitleInput:    'input#other-experience-subject',
@@ -115,17 +115,27 @@ const SEL = {
     employmentYearFrom:      'select#year-from',
     employmentDescInput:     'textarea#description',
 
-    employmentTitleInput:    null,  // TODO: job title input (not in extracted HTML yet)
+    employmentTitleInput:    null,  // TODO: job title input
     employmentSaveBtn:       null,  // TODO: save button inside employment modal
     employmentItems:         null,  // TODO: wrapper element per entry (for count check)
     employmentDeleteBtn:     'button[aria-label*="Delete"][aria-label*="Employment history item"]',
     employmentConfirmDelete: null,  // TODO: confirm button on delete modal
     employmentEditBtn:       'button[aria-label*="Edit"][aria-label*="Employment history item"]', // future use
 
-    // ── Saved for future use ───────────────────────────────────
+    // ── Saved for future use ──────────────────────────────────
     // certificateDeleteBtn: 'button[aria-label*="Delete certificate"]',
     // showMoreBtn:          'button[data-testid="show-more"]',
 };
+
+// ──────────────────────────────────────────────────────────────
+// Build the full Other Experience description:
+// entry description + 2 blank lines + loose 1000 keywords
+// Upwork will truncate at their field limit — we just supply the full string.
+// ──────────────────────────────────────────────────────────────
+function buildOtherExpDescription(description, loose1000) {
+    if (!loose1000 || !loose1000.trim()) return description;
+    return `${description}\n\n\n${loose1000.trim()}`;
+}
 
 // ──────────────────────────────────────────────────────────────
 // Split "City, Country" string into parts
@@ -197,8 +207,9 @@ async function deleteAllEmploymentEntries(notify) {
 
 // ──────────────────────────────────────────────────────────────
 // Add single other experience entry
+// loose1000 is appended to the description before typing
 // ──────────────────────────────────────────────────────────────
-async function addOneOtherExperience(entry) {
+async function addOneOtherExperience(entry, loose1000) {
     const addBtn = getOtherExpAddBtn();
     if (!addBtn) throw new Error('Could not find the Add Other Experience button on this page');
     await humanClick(addBtn);
@@ -208,8 +219,10 @@ async function addOneOtherExperience(entry) {
     await humanType(titleInput, entry.title);
     await safeDelay(300, 700);
 
+    const fullDescription = buildOtherExpDescription(entry.description, loose1000);
+
     const descInput = await waitForEl(SEL.otherExpDescInput);
-    await humanType(descInput, entry.description);
+    await humanType(descInput, fullDescription);
     await safeDelay(400, 900);
 
     const saveBtn = await waitForEl(SEL.otherExpSaveBtn);
@@ -239,14 +252,12 @@ async function addOneEmploymentEntry(entry) {
     await humanSelect(countrySelect, country);
     await safeDelay(300, 600);
 
-    // Job title — TODO when selector is confirmed
     if (SEL.employmentTitleInput) {
         const titleInput = await waitForEl(SEL.employmentTitleInput);
         await humanType(titleInput, entry.title);
         await safeDelay(300, 600);
     }
 
-    // Month/year — use Jan + current year as safe defaults if not in data
     const monthSelect = document.querySelector(SEL.employmentMonthFrom);
     if (monthSelect) { await humanSelect(monthSelect, 'Jan'); await safeDelay(200, 400); }
 
@@ -269,11 +280,18 @@ async function addOneEmploymentEntry(entry) {
 
 // ──────────────────────────────────────────────────────────────
 // Run: Other Experiences (with resume support)
+// loose1000 is passed through to each entry's description
 // ──────────────────────────────────────────────────────────────
 async function runOtherExperiences(parsedData, notify, onDone, resumeFromIndex = 0) {
     if (!parsedData.otherExp.length) {
         notify('No other experience entries found in parsed data.', 'error');
         return;
+    }
+
+    const loose1000 = parsedData.loose1000 || '';
+
+    if (!loose1000.trim()) {
+        notify('Warning: No Loose 1000 keywords found — descriptions will be saved without keyword block.', 'warning');
     }
 
     startAutomation();
@@ -292,9 +310,16 @@ async function runOtherExperiences(parsedData, notify, onDone, resumeFromIndex =
         const total = parsedData.otherExp.length;
 
         for (let i = resumeFromIndex; i < total; i++) {
-            await saveJobState({ type: 'other_exp', index: i, entries: parsedData.otherExp });
+            // Save loose1000 in job state so resume has it too
+            await saveJobState({
+                type:     'other_exp',
+                index:    i,
+                entries:  parsedData.otherExp,
+                loose1000
+            });
+
             await safeDelay(500, 1200);
-            await addOneOtherExperience(parsedData.otherExp[i]);
+            await addOneOtherExperience(parsedData.otherExp[i], loose1000);
             notify(`Other Experience: ${i + 1} / ${total} added`, 'success');
         }
 
