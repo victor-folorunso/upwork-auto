@@ -1,0 +1,200 @@
+:host {
+  --bg-main: #121212;
+  --bg-card: #1e1e1e;
+  --primary: #14a800;
+  --primary-hover: #0f8200;
+  --danger: #c0392b;
+  --text-main: #ffffff;
+  --text-dim: #b3b3b3;
+  --border: #333333;
+  --input-bg: #1a1a1a;
+  --success-bg: #112911;
+  --success-text: #72f272;
+  --warning-bg: #292911;
+  --warning-text: #f2f272;
+  --error-bg: #2d1a1a;
+  --error-text: #ff6b6b;
+}
+
+.wizard-sidebar {
+  background: var(--bg-main);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: 0 12px 40px rgba(0,0,0,.7);
+  color: var(--text-main);
+  font-family: Inter, system-ui, sans-serif;
+  font-size: 12px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* ── Header ── */
+.wiz-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-card);
+}
+
+.wiz-title {
+  font-weight: 700;
+  font-size: 13px;
+  letter-spacing: .3px;
+}
+
+.btn-icon {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  border-radius: 4px;
+  padding: 4px 8px;
+  font-size: 11px;
+  cursor: pointer;
+  transition: color .2s, border-color .2s;
+}
+
+.btn-icon:hover {
+  color: var(--text-main);
+  border-color: var(--primary);
+}
+
+/* ── Watch note ── */
+.watch-note {
+  background: var(--warning-bg);
+  color: var(--warning-text);
+  padding: 8px 14px;
+  font-size: 11px;
+  font-weight: 600;
+  text-align: center;
+  border-bottom: 1px solid #3a3a00;
+}
+
+/* ── Sections ── */
+section {
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.section-label {
+  display: block;
+  color: var(--text-dim);
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: .6px;
+  margin-bottom: 7px;
+}
+
+textarea {
+  width: 100%;
+  min-height: 90px;
+  background: var(--input-bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-main);
+  padding: 8px;
+  font-size: 11px;
+  font-family: inherit;
+  resize: vertical;
+  box-sizing: border-box;
+  line-height: 1.4;
+}
+
+textarea:focus {
+  outline: none;
+  border-color: var(--primary);
+}
+
+textarea::placeholder {
+  color: #555;
+}
+
+/* ── Buttons ── */
+.btn-stack {
+  margin-top: 8px;
+  display: flex;
+  gap: 8px;
+}
+
+button {
+  flex: 1;
+  padding: 8px;
+  border-radius: 5px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  border: none;
+  transition: opacity .15s, background .15s;
+}
+
+button:hover { opacity: .88; }
+button:active { opacity: .7; }
+
+.btn-main {
+  background: var(--primary);
+  color: #fff;
+}
+
+.btn-danger {
+  background: var(--danger);
+  color: #fff;
+}
+
+.full-width { flex: unset; width: 100%; }
+
+/* ── Parse summary ── */
+.parse-summary {
+  padding: 0 14px;
+  overflow: hidden;
+  max-height: 0;
+  transition: max-height .3s ease, padding .3s ease;
+}
+
+.parse-summary.visible {
+  max-height: 120px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.summary-row {
+  color: var(--text-dim);
+  font-size: 11px;
+  padding: 2px 0;
+}
+
+.summary-row span {
+  color: var(--primary);
+  font-weight: 700;
+}
+
+/* ── Status box ── */
+#status-box {
+  display: none;
+  padding: 10px 14px;
+  font-size: 11px;
+  font-weight: 500;
+  position: relative;
+  border-top: 1px solid transparent;
+}
+
+.close-status {
+  position: absolute;
+  top: 6px;
+  right: 10px;
+  cursor: pointer;
+  font-size: 15px;
+  color: var(--text-dim);
+  line-height: 1;
+}
+
+.close-status:hover { color: var(--text-main); }
+
+#status-msg {
+  max-height: 120px;
+  overflow-y: auto;
+  padding-right: 16px;
+  line-height: 1.5;
+}

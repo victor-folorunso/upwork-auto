@@ -1,0 +1,34 @@
+{
+  "manifest_version": 3,
+  "name": "Upwork Wizard",
+  "version": "2.0",
+  "description": "Automated profile management tool for Upwork.",
+  "permissions": [
+    "storage",
+    "unlimitedStorage",
+    "scripting",
+    "tabs",
+    "activeTab"
+  ],
+  "host_permissions": [
+    "https://www.upwork.com/*"
+  ],
+  "content_scripts": [
+    {
+      "matches": ["https://www.upwork.com/*"],
+      "js": [
+        "scripts/human.js",
+        "scripts/parser.js",
+        "scripts/automator.js",
+        "scripts/main.js"
+      ],
+      "run_at": "document_end"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["style.css", "ui.html"],
+      "matches": ["https://www.upwork.com/*"]
+    }
+  ]
+}
