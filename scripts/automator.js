@@ -72,34 +72,94 @@ function waitForEl(selector, timeout = 8000) {
     });
 }
 
+// Select a <select> option by matching visible text (case-insensitive, partial match)
+async function humanSelect(selectEl, targetText) {
+    const target = targetText.trim().toLowerCase();
+    const option = Array.from(selectEl.options).find(o =>
+        o.text.toLowerCase().includes(target) || o.value.toLowerCase().includes(target)
+    );
+    if (!option) throw new Error(`Option not found in select: "${targetText}"`);
+
+    const nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLSelectElement.prototype, 'value')?.set;
+    if (nativeSetter) {
+        nativeSetter.call(selectEl, option.value);
+    } else {
+        selectEl.value = option.value;
+    }
+
+    selectEl.dispatchEvent(new Event('change', { bubbles: true }));
+    await randomDelay(200, 500);
+}
+
 // ──────────────────────────────────────────────────────────────
-// SELECTORS — fill in after web inspect
+// SELECTORS
 // ──────────────────────────────────────────────────────────────
 const SEL = {
-    otherExpItems:           '[data-test="other-experience-item"]',       // TODO
-    otherExpAddBtn:          '[data-test="add-other-experience-btn"]',    // TODO
-    otherExpDeleteBtn:       '[data-test="delete-other-experience-btn"]', // TODO
-    otherExpTitleInput:      '[data-test="other-exp-title-input"]',       // TODO
-    otherExpDescInput:       '[data-test="other-exp-desc-input"]',        // TODO
-    otherExpSaveBtn:         '[data-test="other-exp-save-btn"]',          // TODO
-    otherExpConfirmDelete:   '[data-test="confirm-delete-btn"]',          // TODO
+    // ── Other Experiences ──────────────────────────────────────
+    otherExpAddBtn:        'button[aria-label="Add other experiences"]',
+    otherExpAddBtnAlt:     'button[aria-label="Add an experience"]',
+    otherExpTitleInput:    'input#other-experience-subject',
+    otherExpDescInput:     'textarea#other-experience-description',
+    otherExpSaveBtn:       '.air3-modal-footer button.air3-btn-primary',
 
-    employmentItems:         '[data-test="employment-item"]',             // TODO
-    employmentAddBtn:        '[data-test="add-employment-btn"]',          // TODO
-    employmentDeleteBtn:     '[data-test="delete-employment-btn"]',       // TODO
-    employmentCompanyInput:  '[data-test="employment-company-input"]',    // TODO
-    employmentLocationInput: '[data-test="employment-location-input"]',   // TODO
-    employmentTitleInput:    '[data-test="employment-title-input"]',      // TODO
-    employmentDescInput:     '[data-test="employment-desc-input"]',       // TODO
-    employmentSaveBtn:       '[data-test="employment-save-btn"]',         // TODO
-    employmentConfirmDelete: '[data-test="confirm-delete-btn"]',          // TODO
+    otherExpItems:         null,  // TODO: wrapper element per entry (for count check)
+    otherExpDeleteBtn:     null,  // TODO: delete button per entry
+    otherExpConfirmDelete: null,  // TODO: confirm button on delete modal
+
+    // ── Employment History ─────────────────────────────────────
+    employmentAddBtn:        'button[aria-label="Add employment history"]',
+    employmentCompanyInput:  'input#company',
+    employmentCityInput:     'input#city',
+    employmentCountrySelect: 'select#country',
+    employmentMonthFrom:     'select#month-from',
+    employmentYearFrom:      'select#year-from',
+    employmentDescInput:     'textarea#description',
+
+    employmentTitleInput:    null,  // TODO: job title input (not in extracted HTML yet)
+    employmentSaveBtn:       null,  // TODO: save button inside employment modal
+    employmentItems:         null,  // TODO: wrapper element per entry (for count check)
+    employmentDeleteBtn:     'button[aria-label*="Delete"][aria-label*="Employment history item"]',
+    employmentConfirmDelete: null,  // TODO: confirm button on delete modal
+    employmentEditBtn:       'button[aria-label*="Edit"][aria-label*="Employment history item"]', // future use
+
+    // ── Saved for future use ───────────────────────────────────
+    // certificateDeleteBtn: 'button[aria-label*="Delete certificate"]',
+    // showMoreBtn:          'button[data-testid="show-more"]',
 };
+
+// ──────────────────────────────────────────────────────────────
+// Split "City, Country" string into parts
+// e.g. "Austin, United States" → { city: "Austin", country: "United States" }
+// ──────────────────────────────────────────────────────────────
+function splitLocation(locationStr) {
+    const idx = locationStr.lastIndexOf(',');
+    if (idx === -1) return { city: locationStr.trim(), country: '' };
+    return {
+        city:    locationStr.substring(0, idx).trim(),
+        country: locationStr.substring(idx + 1).trim()
+    };
+}
 
 // ──────────────────────────────────────────────────────────────
 // Count existing entries
 // ──────────────────────────────────────────────────────────────
-function countOtherExperiences()  { return document.querySelectorAll(SEL.otherExpItems).length; }
-function countEmploymentEntries() { return document.querySelectorAll(SEL.employmentItems).length; }
+function countOtherExperiences() {
+    if (!SEL.otherExpItems) return 0;
+    return document.querySelectorAll(SEL.otherExpItems).length;
+}
+
+function countEmploymentEntries() {
+    if (!SEL.employmentItems) return 0;
+    return document.querySelectorAll(SEL.employmentItems).length;
+}
+
+// ──────────────────────────────────────────────────────────────
+// Get the Other Exp add button (tries main label, falls back to alt)
+// ──────────────────────────────────────────────────────────────
+function getOtherExpAddBtn() {
+    return document.querySelector(SEL.otherExpAddBtn)
+        || document.querySelector(SEL.otherExpAddBtnAlt);
+}
 
 // ──────────────────────────────────────────────────────────────
 // Delete all — other experiences
@@ -108,11 +168,11 @@ async function deleteAllOtherExperiences(notify) {
     notify('Deleting existing other experience entries...', 'warning');
     while (true) {
         await safeDelay(600, 1200);
-        const btn = document.querySelector(SEL.otherExpDeleteBtn);
+        const btn = SEL.otherExpDeleteBtn ? document.querySelector(SEL.otherExpDeleteBtn) : null;
         if (!btn) break;
         await humanClick(btn);
         await safeDelay(400, 800);
-        const confirm = document.querySelector(SEL.otherExpConfirmDelete);
+        const confirm = SEL.otherExpConfirmDelete ? document.querySelector(SEL.otherExpConfirmDelete) : null;
         if (confirm) { await humanClick(confirm); await safeDelay(600, 1200); }
     }
     notify('Existing entries cleared.', 'warning');
@@ -125,11 +185,11 @@ async function deleteAllEmploymentEntries(notify) {
     notify('Deleting existing employment entries...', 'warning');
     while (true) {
         await safeDelay(600, 1200);
-        const btn = document.querySelector(SEL.employmentDeleteBtn);
+        const btn = SEL.employmentDeleteBtn ? document.querySelector(SEL.employmentDeleteBtn) : null;
         if (!btn) break;
         await humanClick(btn);
         await safeDelay(400, 800);
-        const confirm = document.querySelector(SEL.employmentConfirmDelete);
+        const confirm = SEL.employmentConfirmDelete ? document.querySelector(SEL.employmentConfirmDelete) : null;
         if (confirm) { await humanClick(confirm); await safeDelay(600, 1200); }
     }
     notify('Existing entries cleared.', 'warning');
@@ -139,7 +199,8 @@ async function deleteAllEmploymentEntries(notify) {
 // Add single other experience entry
 // ──────────────────────────────────────────────────────────────
 async function addOneOtherExperience(entry) {
-    const addBtn = await waitForEl(SEL.otherExpAddBtn);
+    const addBtn = getOtherExpAddBtn();
+    if (!addBtn) throw new Error('Could not find the Add Other Experience button on this page');
     await humanClick(addBtn);
     await safeDelay(600, 1200);
 
@@ -168,18 +229,39 @@ async function addOneEmploymentEntry(entry) {
     await humanType(companyInput, entry.company);
     await safeDelay(300, 600);
 
-    const locationInput = await waitForEl(SEL.employmentLocationInput);
-    await humanType(locationInput, entry.location);
+    const { city, country } = splitLocation(entry.location);
+
+    const cityInput = await waitForEl(SEL.employmentCityInput);
+    await humanType(cityInput, city);
     await safeDelay(300, 600);
 
-    const titleInput = await waitForEl(SEL.employmentTitleInput);
-    await humanType(titleInput, entry.title);
+    const countrySelect = await waitForEl(SEL.employmentCountrySelect);
+    await humanSelect(countrySelect, country);
     await safeDelay(300, 600);
+
+    // Job title — TODO when selector is confirmed
+    if (SEL.employmentTitleInput) {
+        const titleInput = await waitForEl(SEL.employmentTitleInput);
+        await humanType(titleInput, entry.title);
+        await safeDelay(300, 600);
+    }
+
+    // Month/year — use Jan + current year as safe defaults if not in data
+    const monthSelect = document.querySelector(SEL.employmentMonthFrom);
+    if (monthSelect) { await humanSelect(monthSelect, 'Jan'); await safeDelay(200, 400); }
+
+    const yearSelect = document.querySelector(SEL.employmentYearFrom);
+    if (yearSelect) {
+        const currentYear = String(new Date().getFullYear());
+        await humanSelect(yearSelect, currentYear);
+        await safeDelay(200, 400);
+    }
 
     const descInput = await waitForEl(SEL.employmentDescInput);
     await humanType(descInput, entry.description);
     await safeDelay(400, 900);
 
+    if (!SEL.employmentSaveBtn) throw new Error('employmentSaveBtn selector not set yet — TODO');
     const saveBtn = await waitForEl(SEL.employmentSaveBtn);
     await humanClick(saveBtn);
     await safeDelay(700, 1400);
@@ -197,7 +279,6 @@ async function runOtherExperiences(parsedData, notify, onDone, resumeFromIndex =
     startAutomation();
 
     try {
-        // Only delete if starting fresh (not resuming)
         if (resumeFromIndex === 0) {
             const existing = countOtherExperiences();
             if (existing >= 100) {
@@ -211,9 +292,7 @@ async function runOtherExperiences(parsedData, notify, onDone, resumeFromIndex =
         const total = parsedData.otherExp.length;
 
         for (let i = resumeFromIndex; i < total; i++) {
-            // Save progress before each entry so a refresh can resume here
             await saveJobState({ type: 'other_exp', index: i, entries: parsedData.otherExp });
-
             await safeDelay(500, 1200);
             await addOneOtherExperience(parsedData.otherExp[i]);
             notify(`Other Experience: ${i + 1} / ${total} added`, 'success');
@@ -223,7 +302,6 @@ async function runOtherExperiences(parsedData, notify, onDone, resumeFromIndex =
         notify(`✅ Done — ${total} other experience entries added.`, 'success');
 
     } catch (e) {
-        // Do NOT clear job state on error/abort — preserve it for resume
         handleAutomationError(e, notify);
     } finally {
         AUTO.running = false;
@@ -257,7 +335,6 @@ async function runEmploymentHistory(parsedData, notify, onDone, resumeFromIndex 
 
         for (let i = resumeFromIndex; i < total; i++) {
             await saveJobState({ type: 'employment', index: i, entries: parsedData.employment });
-
             await safeDelay(500, 1200);
             await addOneEmploymentEntry(parsedData.employment[i]);
             notify(`Employment: ${i + 1} / ${total} added`, 'success');
@@ -276,15 +353,9 @@ async function runEmploymentHistory(parsedData, notify, onDone, resumeFromIndex 
 
 // ──────────────────────────────────────────────────────────────
 // Check for a saved job — called only when user clicks a run button
-// Returns { type, index, entries } or null
 // ──────────────────────────────────────────────────────────────
-async function checkForSavedJob() {
-    return await loadJobState();
-}
-
-async function discardSavedJob() {
-    await clearJobState();
-}
+async function checkForSavedJob() { return await loadJobState(); }
+async function discardSavedJob()  { await clearJobState(); }
 
 // ──────────────────────────────────────────────────────────────
 // Error handler

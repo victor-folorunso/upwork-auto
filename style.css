@@ -54,6 +54,9 @@
   font-size: 11px;
   cursor: pointer;
   transition: color .2s, border-color .2s;
+  white-space: nowrap;
+  flex-shrink: 0;
+  width: auto;
 }
 
 .btn-icon:hover {
