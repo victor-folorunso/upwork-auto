@@ -5,12 +5,15 @@
 // Uses the Supabase JS client loaded via the manifest.
 
 const WIZARD_CONFIG = {
-    supabaseUrl:        'https://YOUR_PROJECT.supabase.co',   // TODO: replace
-    supabaseAnonKey:    'YOUR_ANON_KEY',                      // TODO: replace
-    webhookEndpoint:    'https://YOUR_PROJECT.supabase.co/functions/v1/flutterwave-webhook',
+    supabaseUrl:        'https://bszdgbpftqdmlnpqqzmq.supabase.co',  
+    supabaseAnonKey:    'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJzemRnYnBmdHFkbWxucHFxem1xIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQwMDM2NzYsImV4cCI6MjA4OTU3OTY3Nn0.X9C8Hgr76BsV7XOrXnVCuIrM3e4s6e48T2jpgp8Ey0w',                    
+    webhookEndpoint:    'https://bszdgbpftqdmlnpqqzmq.supabase.co/functions/v1/flutterwave-webhook',
     flutterwavePayLink: 'https://flutterwave.com/pay/YOUR_LINK', // TODO: replace
     trialDays:          30,
 };
+
+NEXT_PUBLIC_SUPABASE_URL=
+NEXT_PUBLIC_SUPABASE_PUBLISHABLE_DEFAULT_KEY=sb_publishable_11WzNWVH9IB3pJbRnkWegA_GfNzimCL
 
 // ── Supabase client ───────────────────────────────────────────
 // supabase-js is loaded as a content script (see manifest.json)
