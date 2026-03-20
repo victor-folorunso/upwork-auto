@@ -10,19 +10,18 @@ function createShadowHost() {
     if (document.getElementById(ROOT_ID)) return null;
     const host = document.createElement('div');
     host.id = ROOT_ID;
-    // Bottom-right so it doesn't block Upwork's top-left CAPTCHA checkbox
     host.style.cssText = `
         position: fixed;
         bottom: 15px; right: 15px;
         z-index: 2147483647;
         width: ${PANEL_WIDTH};
+        pointer-events: auto;
     `;
     const shadow = host.attachShadow({ mode: 'open' });
     document.body.appendChild(host);
     return shadow;
 }
 
-// Expand host to full viewport so overlay backdrops can fill the screen
 function expandHostForOverlay() {
     const host = document.getElementById(ROOT_ID);
     if (host) host.style.cssText = `
@@ -34,7 +33,6 @@ function expandHostForOverlay() {
     `;
 }
 
-// Shrink host back to sidebar (bottom-right)
 function shrinkHostToSidebar() {
     const host = document.getElementById(ROOT_ID);
     if (host) host.style.cssText = `
@@ -67,7 +65,7 @@ async function appendHTML(shadow, file) {
 }
 
 // ──────────────────────────────────────────────────────────────
-// Notify (main sidebar status box)
+// Notify
 // ──────────────────────────────────────────────────────────────
 const THEME = {
     success: { bg: '#112911', color: '#72f272', border: '#1e4a1e' },
@@ -85,32 +83,65 @@ function notify(shadow, text, type = 'success') {
 }
 
 // ──────────────────────────────────────────────────────────────
-// Overlay open / close helpers
+// Dashboard overlay helpers
 // ──────────────────────────────────────────────────────────────
-function showOverlay(shadow, id) {
+function showDashboardOverlay(shadow) {
     expandHostForOverlay();
-    const el = shadow.querySelector(`#${id}`);
-    if (el) {
-        el.style.display = 'flex';
-        el.style.pointerEvents = 'auto';
+    const el = shadow.querySelector('#dashboard-backdrop');
+    if (el) { el.style.display = 'flex'; el.style.pointerEvents = 'auto'; }
+}
+
+function hideDashboardOverlay(shadow) {
+    const el = shadow.querySelector('#dashboard-backdrop');
+    if (el) el.style.display = 'none';
+    shrinkHostToSidebar();
+}
+
+// ──────────────────────────────────────────────────────────────
+// Auth card helpers (bottom-right, no backdrop)
+// ──────────────────────────────────────────────────────────────
+function showAuthCard(shadow, initialView, profile) {
+    const card = shadow.querySelector('#auth-backdrop');
+    const pill = shadow.querySelector('#wz-pill');
+    if (card) card.style.display = 'block';
+    if (pill) pill.style.display = 'none';
+
+    shadow.querySelectorAll('.auth-view').forEach(v => v.style.display = 'none');
+    const view = shadow.querySelector(`#${initialView}`);
+    if (view) view.style.display = 'block';
+
+    if (initialView === 'auth-view-device' && profile?.device) {
+        const d = profile.device;
+        shadow.querySelector('#device-info-box').innerHTML =
+            `<strong>Registered device</strong><br>` +
+            `First seen: ${new Date(d.first_seen).toLocaleDateString()}<br>` +
+            `Last seen: ${new Date(d.last_seen).toLocaleDateString()}<br>` +
+            `<small style="word-break:break-all">${(d.user_agent ?? '').substring(0, 80)}...</small>`;
     }
 }
 
-function hideOverlay(shadow, id) {
-    const el = shadow.querySelector(`#${id}`);
-    if (el) el.style.display = 'none';
+function hideAuthCard(shadow) {
+    const card = shadow.querySelector('#auth-backdrop');
+    if (card) card.style.display = 'none';
+}
 
-    const anyOpen = ['#auth-backdrop', '#dashboard-backdrop'].some(sel => {
-        const o = shadow.querySelector(sel);
-        return o && o.style.display !== 'none';
-    });
-    if (!anyOpen) shrinkHostToSidebar();
+function showPill(shadow) {
+    const pill = shadow.querySelector('#wz-pill');
+    if (pill) pill.style.display = 'block';
+}
+
+function hidePill(shadow) {
+    const pill = shadow.querySelector('#wz-pill');
+    if (pill) pill.style.display = 'none';
 }
 
 // ──────────────────────────────────────────────────────────────
-// Auth overlay
+// Auth overlay wiring — includes OTP flows
 // ──────────────────────────────────────────────────────────────
 function setupAuthOverlay(shadow, onSuccess) {
+    // Tracks email between signup → OTP and forgot → OTP steps
+    let _pendingEmail = '';
+
     function showView(id) {
         shadow.querySelectorAll('.auth-view').forEach(v => v.style.display = 'none');
         shadow.querySelector(`#${id}`).style.display = 'block';
@@ -123,18 +154,37 @@ function setupAuthOverlay(shadow, onSuccess) {
         el.style.display = 'block';
     }
 
+    function clearMsg(id) {
+        const el = shadow.querySelector(`#${id}`);
+        el.style.display = 'none';
+        el.textContent = '';
+    }
+
     function setLoading(btnId, loading, label) {
         const btn = shadow.querySelector(`#${btnId}`);
         btn.disabled = loading;
         btn.textContent = loading ? 'Please wait...' : label;
     }
 
-    shadow.querySelector('#go-login').onclick             = e => { e.preventDefault(); showView('auth-view-login'); };
-    shadow.querySelector('#go-signup').onclick            = e => { e.preventDefault(); showView('auth-view-signup'); };
-    shadow.querySelector('#go-forgot').onclick            = e => { e.preventDefault(); showView('auth-view-forgot'); };
-    shadow.querySelector('#go-login-from-forgot').onclick = e => { e.preventDefault(); showView('auth-view-login'); };
+    // ── Cancel / pill ──
+    shadow.querySelector('#auth-cancel-btn').onclick = () => {
+        hideAuthCard(shadow);
+        showPill(shadow);
+    };
+    shadow.querySelector('#wz-pill').onclick = () => {
+        hidePill(shadow);
+        showAuthCard(shadow, 'auth-view-signup', null);
+    };
 
-    // ── Sign up ──
+    // ── Nav links ──
+    shadow.querySelector('#go-login').onclick             = e => { e.preventDefault(); clearMsg('su-msg'); showView('auth-view-login'); };
+    shadow.querySelector('#go-signup').onclick            = e => { e.preventDefault(); clearMsg('li-msg'); showView('auth-view-signup'); };
+    shadow.querySelector('#go-forgot').onclick            = e => { e.preventDefault(); clearMsg('li-msg'); showView('auth-view-forgot'); };
+    shadow.querySelector('#go-login-from-forgot').onclick = e => { e.preventDefault(); clearMsg('fp-msg'); showView('auth-view-login'); };
+    shadow.querySelector('#otp-back-signup').onclick      = e => { e.preventDefault(); showView('auth-view-signup'); };
+    shadow.querySelector('#otp-back-reset').onclick       = e => { e.preventDefault(); showView('auth-view-forgot'); };
+
+    // ── Sign up → sends OTP ──
     shadow.querySelector('#su-btn').onclick = async () => {
         const email    = shadow.querySelector('#su-email').value.trim();
         const password = shadow.querySelector('#su-password').value;
@@ -149,8 +199,43 @@ function setupAuthOverlay(shadow, onSuccess) {
         setLoading('su-btn', false, 'Create Account');
 
         if (!result.ok) return msg('su-msg', result.error, 'error');
-        msg('su-msg', '✅ Account created! Check your email to confirm, then log in.', 'success');
-        setTimeout(() => showView('auth-view-login'), 2000);
+
+        _pendingEmail = email;
+        shadow.querySelector('#otp-email-display').textContent = email;
+        clearMsg('otp-signup-msg');
+        shadow.querySelector('#otp-signup-code').value = '';
+        showView('auth-view-otp-signup');
+    };
+
+    // ── OTP verify (signup) ──
+    shadow.querySelector('#otp-signup-btn').onclick = async () => {
+        const token = shadow.querySelector('#otp-signup-code').value.trim();
+        if (token.length !== 6) return msg('otp-signup-msg', 'Enter the 6-digit code from your email.', 'error');
+
+        setLoading('otp-signup-btn', true, 'Verify & Activate');
+        const result = await wizardVerifySignupOtp(_pendingEmail, token);
+        setLoading('otp-signup-btn', false, 'Verify & Activate');
+
+        if (!result.ok) return msg('otp-signup-msg', result.error, 'error');
+
+        // Verified — run gate to show main UI
+        const gate = await wizardGate();
+        handleGate(shadow, gate, onSuccess);
+    };
+
+    // Auto-submit when 6 digits entered
+    shadow.querySelector('#otp-signup-code').oninput = (e) => {
+        if (e.target.value.length === 6) shadow.querySelector('#otp-signup-btn').click();
+    };
+
+    // ── Resend OTP ──
+    shadow.querySelector('#otp-resend-btn').onclick = async (e) => {
+        e.preventDefault();
+        msg('otp-signup-msg', 'Resending...', 'warning');
+        // Re-trigger signUp — Supabase will resend the OTP
+        const pw = shadow.querySelector('#su-password').value;
+        await wizardSignUp(_pendingEmail, pw);
+        msg('otp-signup-msg', '✅ New code sent. Check your email.', 'success');
     };
 
     // ── Log in ──
@@ -170,17 +255,52 @@ function setupAuthOverlay(shadow, onSuccess) {
         handleGate(shadow, gate, onSuccess);
     };
 
-    // ── Forgot password ──
+    // ── Forgot password → sends OTP ──
     shadow.querySelector('#fp-btn').onclick = async () => {
         const email = shadow.querySelector('#fp-email').value.trim();
         if (!email) return msg('fp-msg', 'Enter your email.', 'error');
 
-        setLoading('fp-btn', true, 'Send Reset Link');
+        setLoading('fp-btn', true, 'Send Reset Code');
         const result = await wizardForgotPassword(email);
-        setLoading('fp-btn', false, 'Send Reset Link');
+        setLoading('fp-btn', false, 'Send Reset Code');
 
         if (!result.ok) return msg('fp-msg', result.error, 'error');
-        msg('fp-msg', '✅ Reset link sent. Check your email.', 'success');
+
+        _pendingEmail = email;
+        clearMsg('otp-reset-msg');
+        shadow.querySelector('#otp-reset-code').value = '';
+        shadow.querySelector('#otp-reset-password').value = '';
+        showView('auth-view-otp-reset');
+    };
+
+    // ── OTP verify + new password (reset) ──
+    shadow.querySelector('#otp-reset-btn').onclick = async () => {
+        const token    = shadow.querySelector('#otp-reset-code').value.trim();
+        const password = shadow.querySelector('#otp-reset-password').value;
+
+        if (token.length !== 6)   return msg('otp-reset-msg', 'Enter the 6-digit code from your email.', 'error');
+        if (password.length < 8)  return msg('otp-reset-msg', 'New password must be at least 8 characters.', 'error');
+
+        setLoading('otp-reset-btn', true, 'Set New Password');
+
+        // Step 1: verify OTP → establishes session
+        const verify = await wizardVerifyRecoveryOtp(_pendingEmail, token);
+        if (!verify.ok) {
+            setLoading('otp-reset-btn', false, 'Set New Password');
+            return msg('otp-reset-msg', verify.error, 'error');
+        }
+
+        // Step 2: set new password
+        const update = await wizardUpdatePassword(password);
+        setLoading('otp-reset-btn', false, 'Set New Password');
+
+        if (!update.ok) return msg('otp-reset-msg', update.error, 'error');
+
+        msg('otp-reset-msg', '✅ Password updated! Logging you in...', 'success');
+        setTimeout(async () => {
+            const gate = await wizardGate();
+            handleGate(shadow, gate, onSuccess);
+        }, 1200);
     };
 
     // ── Device mismatch ──
@@ -200,33 +320,12 @@ function setupAuthOverlay(shadow, onSuccess) {
     };
 }
 
-function showAuthOverlay(shadow, initialView, profile, onSuccess) {
-    showOverlay(shadow, 'auth-backdrop');
-    shadow.querySelectorAll('.auth-view').forEach(v => v.style.display = 'none');
-    shadow.querySelector(`#${initialView}`).style.display = 'block';
-
-    if (initialView === 'auth-view-device' && profile?.device) {
-        const d = profile.device;
-        const since = d.first_seen ? new Date(d.first_seen).toLocaleDateString() : 'unknown';
-        shadow.querySelector('#device-info-box').innerHTML =
-            `<strong>Registered device</strong><br>First seen: ${since}<br>` +
-            `Last seen: ${new Date(d.last_seen).toLocaleDateString()}<br>` +
-            `<small style="word-break:break-all">${(d.user_agent ?? '').substring(0, 80)}...</small>`;
-    }
-}
-
-function hideAuthOverlay(shadow) {
-    hideOverlay(shadow, 'auth-backdrop');
-}
-
 // ──────────────────────────────────────────────────────────────
-// Dashboard overlay
+// Dashboard overlay wiring
 // ──────────────────────────────────────────────────────────────
 function setupDashboardOverlay(shadow, profile, subscription) {
 
-    shadow.querySelector('#dashboard-close').onclick = () => {
-        hideOverlay(shadow, 'dashboard-backdrop');
-    };
+    shadow.querySelector('#dashboard-close').onclick = () => hideDashboardOverlay(shadow);
 
     shadow.querySelectorAll('.dash-tab').forEach(tab => {
         tab.onclick = () => {
@@ -237,10 +336,8 @@ function setupDashboardOverlay(shadow, profile, subscription) {
         };
     });
 
-    // ── Prompt tab ──
     const customPromptEl = shadow.querySelector('#dash-custom-prompt');
     const lockedFormatEl = shadow.querySelector('#dash-locked-format');
-
     customPromptEl.value       = profile.custom_prompt || DEFAULT_CUSTOM_PROMPT;
     lockedFormatEl.textContent = LOCKED_FORMAT;
 
@@ -263,7 +360,6 @@ function setupDashboardOverlay(shadow, profile, subscription) {
         el.textContent = 'Reset to default — click Save to apply.';
     };
 
-    // ── Subscription tab ──
     const statusMap = {
         trial:   { icon: '🕐', label: 'Free Trial',   detail: `${subscription.daysLeft ?? 0} days remaining` },
         active:  { icon: '✅', label: 'Active',        detail: `Renews in ${subscription.daysLeft ?? 0} days` },
@@ -340,7 +436,6 @@ function setupDashboardOverlay(shadow, profile, subscription) {
         location.reload();
     };
 
-    // ── Account tab ──
     shadow.querySelector('#acct-email').textContent = profile.email;
     shadow.querySelector('#acct-since').textContent =
         profile.install_date ? new Date(profile.install_date).toLocaleDateString() : '—';
@@ -376,13 +471,13 @@ function setupDashboardOverlay(shadow, profile, subscription) {
 }
 
 function openDashboard(shadow, profile, subscription) {
-    showOverlay(shadow, 'dashboard-backdrop');
+    showDashboardOverlay(shadow);
     shadow.querySelectorAll('.dash-tab').forEach((t, i) => t.classList.toggle('active', i === 0));
     shadow.querySelectorAll('.dash-panel').forEach((p, i) => p.style.display = i === 0 ? 'flex' : 'none');
 }
 
 // ──────────────────────────────────────────────────────────────
-// Main UI (sidebar)
+// Main UI
 // ──────────────────────────────────────────────────────────────
 function setupMainUI(shadow, profile, subscription) {
     let parsedData = null;
@@ -402,9 +497,7 @@ function setupMainUI(shadow, profile, subscription) {
         shadow.querySelector('#status-box').style.display = 'none';
     };
 
-    shadow.querySelector('#act-open-dashboard').onclick = () => {
-        openDashboard(shadow, profile, subscription);
-    };
+    shadow.querySelector('#act-open-dashboard').onclick = () => openDashboard(shadow, profile, subscription);
 
     shadow.querySelector('#act-copy-prompt').onclick = async () => {
         const freshProfile = await loadProfile(profile.id);
@@ -419,92 +512,53 @@ function setupMainUI(shadow, profile, subscription) {
     shadow.querySelector('#act-parse').onclick = () => {
         const raw = shadow.querySelector('#in-ai-output').value.trim();
         if (!raw) { n('Paste the AI output first.', 'error'); return; }
-
         parsedData = parseAIOutput(raw);
-
-        shadow.querySelector('#sum-employment').innerHTML =
-            `Employment entries: <span>${parsedData.employment.length}</span>`;
-        shadow.querySelector('#sum-other-exp').innerHTML =
-            `Other Experience entries: <span>${parsedData.otherExp.length}</span>`;
-        shadow.querySelector('#sum-loose1000').innerHTML =
-            `Keywords (Loose 1000): <span>${parsedData.loose1000 ? '✓ found' : '✗ not found'}</span>`;
-
+        shadow.querySelector('#sum-employment').innerHTML  = `Employment entries: <span>${parsedData.employment.length}</span>`;
+        shadow.querySelector('#sum-other-exp').innerHTML   = `Other Experience entries: <span>${parsedData.otherExp.length}</span>`;
+        shadow.querySelector('#sum-loose1000').innerHTML   = `Keywords (Loose 1000): <span>${parsedData.loose1000 ? '✓ found' : '✗ not found'}</span>`;
         shadow.querySelector('#parse-summary').classList.add('visible');
         if (parsedData.errors.length) n(parsedData.errors, 'warning');
         else n('Output parsed successfully. Choose an action below.', 'success');
-
         const hasData = parsedData.employment.length || parsedData.otherExp.length;
         shadow.querySelector('#action-section').style.display = hasData ? 'block' : 'none';
     };
 
     shadow.querySelector('#act-run-other-exp').onclick = async () => {
         if (AUTO.running) { n('Automation is already running.', 'warning'); return; }
-
         const saved = await checkForSavedJob();
         if (saved && saved.type === 'other_exp') {
-            const resume = confirm(
-                `A previous Other Experiences run was interrupted at entry ${saved.index + 1}.\n\n` +
-                `OK  → Resume from entry ${saved.index + 1}\n` +
-                `Cancel → Discard and start fresh`
-            );
+            const resume = confirm(`A previous Other Experiences run was interrupted at entry ${saved.index + 1}.\n\nOK  → Resume from entry ${saved.index + 1}\nCancel → Discard and start fresh`);
             if (resume) {
                 setRunningState(shadow, true);
-                runOtherExperiences(
-                    { otherExp: saved.entries, employment: [], loose1000: saved.loose1000 || '' },
-                    (t, tp) => n(t, tp), () => setRunningState(shadow, false), saved.index, false
-                );
+                runOtherExperiences({ otherExp: saved.entries, employment: [], loose1000: saved.loose1000 || '' }, (t, tp) => n(t, tp), () => setRunningState(shadow, false), saved.index, false);
                 return;
             }
             await discardSavedJob();
         }
-
         if (!parsedData) { n('Parse the output first.', 'error'); return; }
-
         let shouldDelete = false;
-        const existingCount = countOtherExperiences();
-        if (existingCount > 0) {
-            shouldDelete = confirm(
-                `There are ${existingCount} existing Other Experience entries on your profile.\n\n` +
-                `OK  → Delete all ${existingCount} entries, then add new ones\n` +
-                `Cancel → Keep existing entries and just add new ones`
-            );
-        }
+        const ec = countOtherExperiences();
+        if (ec > 0) shouldDelete = confirm(`There are ${ec} existing Other Experience entries on your profile.\n\nOK  → Delete all ${ec} entries, then add new ones\nCancel → Keep existing entries and just add new ones`);
         setRunningState(shadow, true);
         runOtherExperiences(parsedData, (t, tp) => n(t, tp), () => setRunningState(shadow, false), 0, shouldDelete);
     };
 
     shadow.querySelector('#act-run-employment').onclick = async () => {
         if (AUTO.running) { n('Automation is already running.', 'warning'); return; }
-
         const saved = await checkForSavedJob();
         if (saved && saved.type === 'employment') {
-            const resume = confirm(
-                `A previous Employment run was interrupted at entry ${saved.index + 1}.\n\n` +
-                `OK  → Resume from entry ${saved.index + 1}\n` +
-                `Cancel → Discard and start fresh`
-            );
+            const resume = confirm(`A previous Employment run was interrupted at entry ${saved.index + 1}.\n\nOK  → Resume from entry ${saved.index + 1}\nCancel → Discard and start fresh`);
             if (resume) {
                 setRunningState(shadow, true);
-                runEmploymentHistory(
-                    { employment: saved.entries, otherExp: [] },
-                    (t, tp) => n(t, tp), () => setRunningState(shadow, false), saved.index, false
-                );
+                runEmploymentHistory({ employment: saved.entries, otherExp: [] }, (t, tp) => n(t, tp), () => setRunningState(shadow, false), saved.index, false);
                 return;
             }
             await discardSavedJob();
         }
-
         if (!parsedData) { n('Parse the output first.', 'error'); return; }
-
         let shouldDelete = false;
-        const existingCount = countEmploymentEntries();
-        if (existingCount > 0) {
-            shouldDelete = confirm(
-                `There are ${existingCount} existing Employment History entries on your profile.\n\n` +
-                `OK  → Delete all ${existingCount} entries, then add new ones\n` +
-                `Cancel → Keep existing entries and just add new ones`
-            );
-        }
+        const ec = countEmploymentEntries();
+        if (ec > 0) shouldDelete = confirm(`There are ${ec} existing Employment History entries on your profile.\n\nOK  → Delete all ${ec} entries, then add new ones\nCancel → Keep existing entries and just add new ones`);
         setRunningState(shadow, true);
         runEmploymentHistory(parsedData, (t, tp) => n(t, tp), () => setRunningState(shadow, false), 0, shouldDelete);
     };
@@ -521,9 +575,7 @@ function setRunningState(shadow, running) {
     shadow.querySelector('#act-stop').style.display   = running ? 'block' : 'none';
     ['#act-run-other-exp', '#act-run-employment'].forEach(sel => {
         const btn = shadow.querySelector(sel);
-        btn.disabled      = running;
-        btn.style.opacity = running ? '0.45' : '';
-        btn.style.cursor  = running ? 'not-allowed' : '';
+        btn.disabled = running; btn.style.opacity = running ? '0.45' : ''; btn.style.cursor = running ? 'not-allowed' : '';
     });
 }
 
@@ -531,22 +583,20 @@ function setRunningState(shadow, running) {
 // Gate handler
 // ──────────────────────────────────────────────────────────────
 async function handleGate(shadow, gate, onSuccess) {
-    hideAuthOverlay(shadow);
+    hideAuthCard(shadow);
+    hidePill(shadow);
 
     if (gate.state === 'no_session') {
-        showAuthOverlay(shadow, 'auth-view-signup', null, onSuccess);
+        showAuthCard(shadow, 'auth-view-signup', null);
         return;
     }
-
     if (gate.state === 'device_mismatch') {
-        showAuthOverlay(shadow, 'auth-view-device', gate.profile, onSuccess);
+        showAuthCard(shadow, 'auth-view-device', gate.profile);
         return;
     }
 
     shrinkHostToSidebar();
-
-    const uiRoot = shadow.querySelector('#ui-root');
-    uiRoot.style.display = 'block';
+    shadow.querySelector('#ui-root').style.display = 'block';
 
     if (gate.state === 'upgrade_required') {
         shadow.querySelector('#expired-note').style.display = 'block';
@@ -557,16 +607,13 @@ async function handleGate(shadow, gate, onSuccess) {
         };
         ['#act-run-other-exp', '#act-run-employment'].forEach(sel => {
             const btn = shadow.querySelector(sel);
-            btn.disabled = true;
-            btn.style.opacity = '0.4';
-            btn.title = 'Subscription required';
+            btn.disabled = true; btn.style.opacity = '0.4'; btn.title = 'Subscription required';
         });
         setupMainUI(shadow, gate.profile, gate.subscription);
         setupDashboardOverlay(shadow, gate.profile, gate.subscription);
         return;
     }
 
-    // state === 'ok'
     setupMainUI(shadow, gate.profile, gate.subscription);
     setupDashboardOverlay(shadow, gate.profile, gate.subscription);
     if (onSuccess) onSuccess();
@@ -580,7 +627,6 @@ async function main() {
     if (!shadow) return;
 
     await injectCSS(shadow);
-
     await appendHTML(shadow, 'overlay-auth.html');
     await appendHTML(shadow, 'overlay-dashboard.html');
 
@@ -589,6 +635,13 @@ async function main() {
     uiWrapper.style.display = 'none';
 
     setupAuthOverlay(shadow, null);
+
+    chrome.runtime.onMessage.addListener((msg) => {
+        if (msg.type !== 'WIZARD_SHOW') return;
+        if (shadow.querySelector('#ui-root')?.style.display !== 'none') return;
+        hidePill(shadow);
+        showAuthCard(shadow, 'auth-view-signup', null);
+    });
 
     const gate = await wizardGate();
     await handleGate(shadow, gate, null);

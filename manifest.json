@@ -13,9 +13,12 @@
   ],
   "host_permissions": [
     "https://www.upwork.com/*",
-    "https://*.supabase.co/*",
-    "https://cdn.jsdelivr.net/*"
+    "https://*.supabase.co/*"
   ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Upwork Wizard"
+  },
   "content_scripts": [
     {
       "matches": ["https://www.upwork.com/*"],

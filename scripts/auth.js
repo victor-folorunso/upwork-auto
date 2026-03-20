@@ -1,19 +1,16 @@
 // auth.js — Supabase auth, session management, device binding,
 //           subscription checks, prompt storage.
-//
-// Loaded before main.js. Exposes a global WizardAuth object.
-// Uses the Supabase JS client loaded via the manifest.
+//           Uses OTP email verification — no redirect links.
 
 const WIZARD_CONFIG = {
-    supabaseUrl:        'https://bszdgbpftqdmlnpqqzmq.supabase.co',  
-    supabaseAnonKey:    'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJzemRnYnBmdHFkbWxucHFxem1xIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQwMDM2NzYsImV4cCI6MjA4OTU3OTY3Nn0.X9C8Hgr76BsV7XOrXnVCuIrM3e4s6e48T2jpgp8Ey0w',                    
+    supabaseUrl:        'https://bszdgbpftqdmlnpqqzmq.supabase.co',
+    supabaseAnonKey:    'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJzemRnYnBmdHFkbWxucHFxem1xIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQwMDM2NzYsImV4cCI6MjA4OTU3OTY3Nn0.X9C8Hgr76BsV7XOrXnVCuIrM3e4s6e48T2jpgp8Ey0w',
     webhookEndpoint:    'https://bszdgbpftqdmlnpqqzmq.supabase.co/functions/v1/flutterwave-webhook',
     flutterwavePayLink: 'https://flutterwave.com/pay/YOUR_LINK', // TODO: replace
     trialDays:          30,
 };
 
 // ── Supabase client ───────────────────────────────────────────
-// supabase-js is loaded as a content script (see manifest.json)
 const _supabase = supabase.createClient(
     WIZARD_CONFIG.supabaseUrl,
     WIZARD_CONFIG.supabaseAnonKey,
@@ -21,22 +18,15 @@ const _supabase = supabase.createClient(
         auth: {
             persistSession: true,
             storage: {
-                // Store session in chrome.storage.local so it
-                // survives page navigations within Upwork
-                getItem: (key) => new Promise(r =>
-                    chrome.storage.local.get(key, d => r(d[key] ?? null))),
-                setItem: (key, val) => new Promise(r =>
-                    chrome.storage.local.set({ [key]: val }, r)),
-                removeItem: (key) => new Promise(r =>
-                    chrome.storage.local.remove(key, r)),
+                getItem:    (key) => new Promise(r => chrome.storage.local.get(key, d => r(d[key] ?? null))),
+                setItem:    (key, val) => new Promise(r => chrome.storage.local.set({ [key]: val }, r)),
+                removeItem: (key) => new Promise(r => chrome.storage.local.remove(key, r)),
             }
         }
     }
 );
 
 // ── Machine fingerprint ───────────────────────────────────────
-// Stable within one browser install. Combines browser signals
-// into a short hex hash. Not cryptographic — abuse prevention only.
 function getFingerprint() {
     const raw = [
         navigator.userAgent,
@@ -46,7 +36,6 @@ function getFingerprint() {
         navigator.hardwareConcurrency ?? 0,
         navigator.platform ?? '',
     ].join('|');
-
     let hash = 5381;
     for (let i = 0; i < raw.length; i++) {
         hash = ((hash << 5) + hash) ^ raw.charCodeAt(i);
@@ -55,15 +44,10 @@ function getFingerprint() {
 }
 
 // ── Chrome storage helpers ────────────────────────────────────
-function csGet(keys) {
-    return new Promise(r => chrome.storage.local.get(keys, r));
-}
-function csSet(data) {
-    return new Promise(r => chrome.storage.local.set(data, r));
-}
+function csGet(keys) { return new Promise(r => chrome.storage.local.get(keys, r)); }
+function csSet(data) { return new Promise(r => chrome.storage.local.set(data, r)); }
 
 // ── Session cache (24h) ───────────────────────────────────────
-// Avoids hitting Supabase on every Upwork page load.
 async function getCachedStatus() {
     const { wz_status_cache } = await csGet('wz_status_cache');
     if (!wz_status_cache) return null;
@@ -74,8 +58,7 @@ async function getCachedStatus() {
 async function setCachedStatus(status, extra = {}) {
     await csSet({
         wz_status_cache: {
-            status,
-            ...extra,
+            status, ...extra,
             expires: Date.now() + 24 * 60 * 60 * 1000
         }
     });
@@ -85,15 +68,38 @@ async function clearStatusCache() {
     await csSet({ wz_status_cache: null });
 }
 
-// ── Auth: sign up ─────────────────────────────────────────────
+// ── Auth: sign up (sends OTP, does NOT auto-confirm) ──────────
+// Supabase sends a 6-digit OTP to the user's email.
+// Call wizardVerifySignupOtp() after to complete verification.
 async function wizardSignUp(email, password) {
-    const { data, error } = await _supabase.auth.signUp({ email, password });
+    const { data, error } = await _supabase.auth.signUp({
+        email,
+        password,
+        options: {
+            // Tell Supabase to send OTP instead of a magic link.
+            // In your Supabase dashboard set Auth > Email Templates > Confirm signup
+            // to use {{ .Token }} (the 6-digit code) — see email_templates.md
+            emailRedirectTo: undefined,
+        }
+    });
     if (error) return { ok: false, error: error.message };
-    // Profile row is created automatically by the DB trigger (05_on_signup_trigger.sql)
-    return { ok: true, user: data.user };
+    // data.user exists but session is null until OTP is verified
+    return { ok: true, email };
 }
 
-// ── Auth: sign in ─────────────────────────────────────────────
+// ── Auth: verify signup OTP ───────────────────────────────────
+async function wizardVerifySignupOtp(email, token) {
+    const { data, error } = await _supabase.auth.verifyOtp({
+        email,
+        token,
+        type: 'signup',
+    });
+    if (error) return { ok: false, error: error.message };
+    await clearStatusCache();
+    return { ok: true, session: data.session };
+}
+
+// ── Auth: sign in (no OTP needed for login) ───────────────────
 async function wizardSignIn(email, password) {
     const { data, error } = await _supabase.auth.signInWithPassword({ email, password });
     if (error) return { ok: false, error: error.message };
@@ -107,11 +113,30 @@ async function wizardSignOut() {
     await clearStatusCache();
 }
 
-// ── Auth: forgot password ─────────────────────────────────────
+// ── Auth: forgot password — sends OTP ────────────────────────
+// After user receives OTP, call wizardVerifyRecoveryOtp() then
+// wizardUpdatePassword() to complete the reset.
 async function wizardForgotPassword(email) {
-    const { error } = await _supabase.auth.resetPasswordForEmail(email, {
-        redirectTo: 'https://www.upwork.com'  // Upwork is where they'll be
+    const { error } = await _supabase.auth.resetPasswordForEmail(email);
+    if (error) return { ok: false, error: error.message };
+    return { ok: true };
+}
+
+// ── Auth: verify password reset OTP ──────────────────────────
+async function wizardVerifyRecoveryOtp(email, token) {
+    const { data, error } = await _supabase.auth.verifyOtp({
+        email,
+        token,
+        type: 'recovery',
     });
+    if (error) return { ok: false, error: error.message };
+    await clearStatusCache();
+    return { ok: true, session: data.session };
+}
+
+// ── Auth: set new password (after recovery OTP verified) ──────
+async function wizardUpdatePassword(newPassword) {
+    const { error } = await _supabase.auth.updateUser({ password: newPassword });
     if (error) return { ok: false, error: error.message };
     return { ok: true };
 }
@@ -122,7 +147,7 @@ async function getSession() {
     return data?.session ?? null;
 }
 
-// ── Load user profile from Supabase ──────────────────────────
+// ── Load user profile ─────────────────────────────────────────
 async function loadProfile(userId) {
     const { data, error } = await _supabase
         .from('user_profiles')
@@ -133,115 +158,82 @@ async function loadProfile(userId) {
     return data;
 }
 
-// ── Register / verify device ──────────────────────────────────
-// Returns: { ok: true } | { ok: false, error: 'DEVICE_MISMATCH' }
+// ── Device binding ────────────────────────────────────────────
 async function verifyDevice(userId, profile) {
     const fp = getFingerprint();
     const existingDevice = profile.device;
 
     if (!existingDevice) {
-        // First login — register this device
-        await _supabase
-            .from('user_profiles')
-            .update({
-                device: {
-                    fingerprint: fp,
-                    user_agent:  navigator.userAgent,
-                    first_seen:  new Date().toISOString(),
-                    last_seen:   new Date().toISOString(),
-                }
-            })
-            .eq('id', userId);
+        await _supabase.from('user_profiles').update({
+            device: {
+                fingerprint: fp,
+                user_agent:  navigator.userAgent,
+                first_seen:  new Date().toISOString(),
+                last_seen:   new Date().toISOString(),
+            }
+        }).eq('id', userId);
         return { ok: true, newDevice: true };
     }
 
     if (existingDevice.fingerprint === fp) {
-        // Known device — update last_seen
-        await _supabase
-            .from('user_profiles')
+        await _supabase.from('user_profiles')
             .update({ device: { ...existingDevice, last_seen: new Date().toISOString() } })
             .eq('id', userId);
         return { ok: true };
     }
 
-    // Different fingerprint — block
     return { ok: false, error: 'DEVICE_MISMATCH' };
 }
 
-// ── Remove device (from dashboard) ───────────────────────────
 async function removeDevice(userId) {
-    await _supabase
-        .from('user_profiles')
-        .update({ device: null })
-        .eq('id', userId);
+    await _supabase.from('user_profiles').update({ device: null }).eq('id', userId);
     await clearStatusCache();
 }
 
-// ── Check subscription status ─────────────────────────────────
-// Returns: { allowed, status, daysLeft? }
+// ── Subscription check ────────────────────────────────────────
 function evalSubscription(profile) {
     const { subscription_status, subscription_expires_at } = profile;
 
-    if (subscription_status === 'free') {
-        return { allowed: true, status: 'free' };
-    }
+    if (subscription_status === 'free') return { allowed: true, status: 'free' };
 
     if (subscription_status === 'active') {
         const expires = new Date(subscription_expires_at);
         if (expires > new Date()) {
-            const daysLeft = Math.ceil((expires - Date.now()) / (24 * 60 * 60 * 1000));
-            return { allowed: true, status: 'active', daysLeft };
+            return { allowed: true, status: 'active', daysLeft: Math.ceil((expires - Date.now()) / 86400000) };
         }
-        // Expired — update DB lazily
-        _supabase.from('user_profiles')
-            .update({ subscription_status: 'expired' })
-            .eq('id', profile.id);
+        _supabase.from('user_profiles').update({ subscription_status: 'expired' }).eq('id', profile.id);
         return { allowed: false, status: 'expired' };
     }
 
     if (subscription_status === 'trial') {
         const expires = new Date(subscription_expires_at);
         if (expires > new Date()) {
-            const daysLeft = Math.ceil((expires - Date.now()) / (24 * 60 * 60 * 1000));
-            return { allowed: true, status: 'trial', daysLeft };
+            return { allowed: true, status: 'trial', daysLeft: Math.ceil((expires - Date.now()) / 86400000) };
         }
-        _supabase.from('user_profiles')
-            .update({ subscription_status: 'expired' })
-            .eq('id', profile.id);
+        _supabase.from('user_profiles').update({ subscription_status: 'expired' }).eq('id', profile.id);
         return { allowed: false, status: 'expired' };
     }
 
     return { allowed: false, status: 'expired' };
 }
 
-// ── Main gate — called by main.js on every load ───────────────
-// Returns one of:
-//   { state: 'no_session' }
-//   { state: 'device_mismatch' }
-//   { state: 'ok', profile, subscription }
-//   { state: 'upgrade_required', profile }
+// ── Main gate ─────────────────────────────────────────────────
 async function wizardGate() {
-    // 1. Check cache first
     const cached = await getCachedStatus();
     if (cached && cached.status === 'ok') {
         return { state: 'ok', fromCache: true, subscription: cached.subscription, profile: cached.profile };
     }
 
-    // 2. Get session
     const session = await getSession();
     if (!session) return { state: 'no_session' };
 
-    // 3. Load profile
     const profile = await loadProfile(session.user.id);
-    if (!profile) return { state: 'no_session' };  // profile missing — treat as logged out
+    if (!profile) return { state: 'no_session' };
 
-    // 4. Verify device
     const deviceCheck = await verifyDevice(session.user.id, profile);
     if (!deviceCheck.ok) return { state: 'device_mismatch', profile };
 
-    // 5. Check subscription
     const subscription = evalSubscription(profile);
-
     if (subscription.allowed) {
         await setCachedStatus('ok', { subscription, profile });
         return { state: 'ok', profile, subscription };
@@ -251,12 +243,6 @@ async function wizardGate() {
 }
 
 // ── Prompt helpers ────────────────────────────────────────────
-// The prompt is split into two parts:
-//   1. custom_prompt — user-editable, stored in Supabase
-//   2. LOCKED_FORMAT — output format block, hardcoded in client
-//
-// Full prompt = custom_prompt + '\n\n' + LOCKED_FORMAT
-
 const LOCKED_FORMAT = `WHEN I SAY GENERATE
 Produce all output in the following structured format exactly. Use the block tags and field prefixes precisely as shown. No deviations, no extra commentary between blocks.
 
@@ -346,13 +332,12 @@ async function saveCustomPrompt(userId, customPrompt) {
 }
 
 // ── Payment URL builder ───────────────────────────────────────
-// tx_ref: wizard_<userId>_<timestamp>_<coupon_or_none>
 function buildPaymentUrl(userId, coupon) {
     const txRef = `wizard_${userId}_${Date.now()}_${coupon ? coupon.toUpperCase() : 'none'}`;
     return `${WIZARD_CONFIG.flutterwavePayLink}?tx_ref=${txRef}`;
 }
 
-// ── Coupon redemption (MAVERIC100 free) ───────────────────────
+// ── Free coupon redemption ────────────────────────────────────
 async function redeemFreeCoupon(userId, coupon) {
     try {
         const res = await fetch(WIZARD_CONFIG.webhookEndpoint, {
