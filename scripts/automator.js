@@ -135,7 +135,7 @@ const SEL = {
     otherExpDescInput:     'textarea#other-experience-description',
     otherExpSaveBtn:       '.air3-modal-footer button.air3-btn-primary',
 
-    otherExpItems:         null,  // TODO: need count selector — share parent container HTML
+    otherExpItems:         null,  // TODO: fill in once parent container HTML is known
     // aria-label: "Delete <title> Experience item"
     otherExpDeleteBtn:     'button[aria-label*="Delete"][aria-label$="Experience item"]',
     // confirm modal: same .air3-modal-footer pattern, wait for it async
@@ -152,7 +152,7 @@ const SEL = {
     employmentDescInput:   'textarea#description',
     employmentSaveBtn:     '.air3-modal-footer button.air3-btn-primary',
 
-    employmentItems:       null,  // TODO: need count selector — share parent container HTML
+    employmentItems:       null,  // TODO: fill in once parent container HTML is known
     // aria-label: "Delete <title> Employment history item"
     employmentDeleteBtn:   'button[aria-label*="Delete"][aria-label$="Employment history item"]',
     // confirm modal: .air3-btn-row-right button.air3-btn-primary, wait for it async
@@ -189,12 +189,12 @@ function splitLocation(locationStr) {
 // Count existing entries by reading the live Upwork DOM
 // ──────────────────────────────────────────────────────────────
 function countOtherExperiences() {
-    if (!SEL.otherExpItems) return 0;  // selector not yet known
+    if (!SEL.otherExpItems) return 0;
     return document.querySelectorAll(SEL.otherExpItems).length;
 }
 
 function countEmploymentEntries() {
-    if (!SEL.employmentItems) return 0;  // selector not yet known
+    if (!SEL.employmentItems) return 0;
     return document.querySelectorAll(SEL.employmentItems).length;
 }
 
@@ -206,14 +206,13 @@ function getOtherExpAddBtn() {
 // ──────────────────────────────────────────────────────────────
 // Delete one other experience entry (click delete → wait for modal → confirm)
 // ──────────────────────────────────────────────────────────────
-async function deleteOneOtherExperience(notify, index, total) {
+async function deleteOneOtherExperience(notify, index) {
     const btn = document.querySelector(SEL.otherExpDeleteBtn);
-    if (!btn) return false;  // no more entries
+    if (!btn) return false;
 
     await humanClick(btn);
     await safeDelay(400, 800);
 
-    // Wait for the confirm modal to appear, then click Delete
     const confirmBtn = await waitForEl(SEL.otherExpConfirmDelete);
     await humanClick(confirmBtn);
     await safeDelay(700, 1400);
@@ -227,12 +226,11 @@ async function deleteOneOtherExperience(notify, index, total) {
 // ──────────────────────────────────────────────────────────────
 async function deleteOneEmploymentEntry(notify, index) {
     const btn = document.querySelector(SEL.employmentDeleteBtn);
-    if (!btn) return false;  // no more entries
+    if (!btn) return false;
 
     await humanClick(btn);
     await safeDelay(400, 800);
 
-    // Wait for the confirm modal to appear, then click Delete
     const confirmBtn = await waitForEl(SEL.employmentConfirmDelete);
     await humanClick(confirmBtn);
     await safeDelay(700, 1400);
@@ -306,12 +304,13 @@ async function addOneEmploymentEntry(entry) {
     await typeAndPickFirst(companyInput, entry.company);
     await safeDelay(300, 600);
 
+    const { city, country } = splitLocation(entry.location);
+
     const cityInput = await waitForEl(SEL.employmentCityInput);
-    await humanType(cityInput, entry.city || splitLocation(entry.location).city);
+    await humanType(cityInput, city);
     await safeDelay(300, 600);
 
     const countryInput = await waitForEl(SEL.employmentCountryInput);
-    const { country } = splitLocation(entry.location);
     await typeAndPickFirst(countryInput, country);
     await safeDelay(300, 600);
 
@@ -327,7 +326,7 @@ async function addOneEmploymentEntry(entry) {
     await safeDelay(300, 600);
 
     const descInput = await waitForEl(SEL.employmentDescInput);
-    await humanType(descInput, entry.description);
+    await humanPaste(descInput, entry.description);
     await safeDelay(400, 900);
 
     const saveBtn = await waitForEl(SEL.employmentSaveBtn);

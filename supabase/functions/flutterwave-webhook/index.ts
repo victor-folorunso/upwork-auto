@@ -8,19 +8,16 @@
 //
 // 2. Free coupon redemption (type: "coupon_redeem")
 //    Called by the extension when MAVERIC100 is applied.
-//    Sets subscription_status = 'free' (no expiry).
-//
-// Both require the user to already have an account (auth.users row).
-// The user_id is passed in the tx_ref for Flutterwave,
-// or directly in the body for coupon redemption.
+//    Requires a valid user JWT — verifies that body.user_id matches the
+//    authenticated user to prevent unauthorized free-access grants.
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const supabase = createClient(
-    Deno.env.get("SUPABASE_URL")!,
-    Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
-);
+const SUPABASE_URL      = Deno.env.get("SUPABASE_URL")!;
+const SERVICE_ROLE_KEY  = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+
+const supabase = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
 
 const FLW_SECRET = Deno.env.get("FLW_WEBHOOK_SECRET")!;
 
@@ -35,7 +32,18 @@ serve(async (req) => {
     const body = await req.json();
 
     // ── Free coupon redemption ────────────────────────────────
+    // Requires a valid JWT — verifies body.user_id matches the caller
     if (body.type === "coupon_redeem") {
+        const authHeader = req.headers.get("Authorization");
+        if (!authHeader) return json({ error: "MISSING_AUTH" }, 401);
+
+        const userClient = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, {
+            global: { headers: { Authorization: authHeader } },
+        });
+        const { data: { user }, error: authError } = await userClient.auth.getUser();
+        if (authError || !user) return json({ error: "INVALID_AUTH" }, 401);
+        if ((body.user_id as string) !== user.id) return json({ error: "USER_MISMATCH" }, 403);
+
         return await handleCouponRedeem(body);
     }
 
@@ -70,23 +78,17 @@ async function handlePayment(data: Record<string, unknown>) {
 
     if (!userId) return json({ error: "INVALID_TX_REF" }, 400);
 
-    // Resolve coupon discount if present
     let couponId = null;
-    let discountPercent = 0;
 
     if (couponCode) {
         const { error: couponErr } = await supabase.rpc("redeem_coupon", { p_code: couponCode });
-        if (couponErr) {
-            // Coupon invalid or exhausted — don't block payment, just ignore discount
-            console.warn("Coupon error on payment:", couponErr.message);
-        } else {
+        if (!couponErr) {
             const { data: coupon } = await supabase
                 .from("coupons")
-                .select("id, discount_percent")
+                .select("id")
                 .eq("code", couponCode.toUpperCase().trim())
                 .single();
             couponId = coupon?.id ?? null;
-            discountPercent = coupon?.discount_percent ?? 0;
         }
     }
 
@@ -123,7 +125,6 @@ async function handleCouponRedeem(body: Record<string, unknown>) {
     if (!user_id || !coupon) return json({ error: "MISSING_FIELDS" }, 400);
     if (coupon.toUpperCase().trim() !== "MAVERIC100") return json({ error: "NOT_FREE_COUPON" }, 400);
 
-    // Check profile exists
     const { data: profile } = await supabase
         .from("user_profiles")
         .select("id, subscription_status")
@@ -152,7 +153,7 @@ async function handleCouponRedeem(body: Record<string, unknown>) {
         .from("user_profiles")
         .update({
             subscription_status:     "free",
-            subscription_expires_at: "2099-01-01T00:00:00Z",  // effectively never
+            subscription_expires_at: "2099-01-01T00:00:00Z",
             coupon_id:               couponRow?.id ?? null,
         })
         .eq("id", user_id);

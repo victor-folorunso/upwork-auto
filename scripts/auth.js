@@ -128,10 +128,21 @@ async function wizardUpdatePassword(newPassword) {
     return { ok: true };
 }
 
-// ── Get current session ───────────────────────────────────────
+// ── Get current session (with auto-refresh) ──────────────────
+// Always refreshes the token if it expires within the next 5 minutes.
+// Called before every Edge Function request to ensure the token is fresh.
 async function getSession() {
-    const { data } = await _supabase.auth.getSession();
-    return data?.session ?? null;
+    const { data: { session } } = await _supabase.auth.getSession();
+    if (!session) return null;
+
+    const expiresAt = session.expires_at ?? 0;
+    const now = Math.floor(Date.now() / 1000);
+    if (expiresAt - now < 300) {
+        const { data: refreshed } = await _supabase.auth.refreshSession();
+        return refreshed?.session ?? null;
+    }
+
+    return session;
 }
 
 // ── Load user profile ─────────────────────────────────────────
@@ -173,7 +184,6 @@ async function verifyDevice(userId, profile) {
 }
 
 async function removeDevice(userId) {
-    // Clear device from DB
     await _supabase.from('user_profiles').update({ device: null }).eq('id', userId);
     await clearStatusCache();
     // Sign out globally — invalidates session on ALL devices so the
@@ -323,16 +333,11 @@ async function saveCustomPrompt(userId, customPrompt) {
 }
 
 // ── tx_ref builder ────────────────────────────────────────────
-// Creates a unique transaction reference for this payment attempt.
-// format: wizard_<userId>_<timestamp>_<coupon_or_none>
 function buildTxRef(userId, coupon) {
     return `wizard_${userId}_${Date.now()}_${coupon ? coupon.toUpperCase() : 'none'}`;
 }
 
-// ── Initiate payment — creates Flutterwave virtual account ────
-// Called when user clicks Pay. Returns virtual account details
-// for the user to transfer the exact amount to.
-// amount: 1000 (full) or 500 (MAVERIC50 applied)
+// ── Initiate payment — creates Flutterwave hosted checkout link ──
 async function initiatePayment(userId, email, coupon) {
     const amount = (coupon === 'MAVERIC50') ? 500 : 1000;
     const txRef  = buildTxRef(userId, coupon);
@@ -359,11 +364,17 @@ async function initiatePayment(userId, email, coupon) {
 
 // ── Free coupon redemption (MAVERIC100) ──────────────────────
 async function redeemFreeCoupon(userId, coupon) {
+    const session = await getSession();
+    if (!session) return { ok: false, error: 'NO_SESSION' };
+
     try {
         const res = await fetch(WIZARD_CONFIG.webhookEndpoint, {
             method:  'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body:    JSON.stringify({ type: 'coupon_redeem', user_id: userId, coupon })
+            headers: {
+                'Content-Type':  'application/json',
+                'Authorization': `Bearer ${session.access_token}`,
+            },
+            body: JSON.stringify({ type: 'coupon_redeem', user_id: userId, coupon })
         });
         const data = await res.json();
         if (res.ok && data.ok) { await clearStatusCache(); return { ok: true }; }
@@ -374,13 +385,10 @@ async function redeemFreeCoupon(userId, coupon) {
 }
 
 // ── Payment polling ───────────────────────────────────────────
-// Polls the verify-payment Edge Function every 8 seconds.
-// The Flutterwave secret key never leaves the server.
-//
-// onTick(secondsElapsed) — called on each pending check
-// Returns: { ok: true } | { ok: false, error: 'TIMEOUT' | 'CANCELLED' | string }
+// getSession() is called on every iteration so the token is always
+// fresh regardless of how long polling runs.
 const POLL_INTERVAL_MS = 8000;
-const POLL_TIMEOUT_MS  = 600000; // 10 minutes
+const POLL_TIMEOUT_MS  = 600000;
 
 let _pollCancelled = false;
 
@@ -388,15 +396,15 @@ function cancelPoll() { _pollCancelled = true; }
 
 async function pollPayment(txRef, onTick) {
     _pollCancelled = false;
-    const session = await getSession();
-    if (!session) return { ok: false, error: 'NO_SESSION' };
-
     const started = Date.now();
 
     while (Date.now() - started < POLL_TIMEOUT_MS) {
         if (_pollCancelled) return { ok: false, error: 'CANCELLED' };
 
         try {
+            const session = await getSession();
+            if (!session) return { ok: false, error: 'NO_SESSION' };
+
             const res = await fetch(WIZARD_CONFIG.verifyEndpoint, {
                 method:  'POST',
                 headers: {
@@ -413,7 +421,9 @@ async function pollPayment(txRef, onTick) {
                 return { ok: true };
             }
 
-            if (data.error && data.error !== 'NO_SESSION') {
+            // Auth errors are retried on the next loop (getSession refreshes)
+            // Only exit early on hard non-retryable errors
+            if (data.error && data.error !== 'INVALID_AUTH' && data.error !== 'NO_SESSION') {
                 return { ok: false, error: data.error };
             }
 

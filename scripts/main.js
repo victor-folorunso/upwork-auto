@@ -17,7 +17,7 @@ function createShadowHost() {
         width: ${PANEL_WIDTH};
         pointer-events: auto;
     `;
-    const shadow = host.attachShadow({ mode: 'open' });
+    const shadow = host.attachShadow({ mode: 'closed' });
     document.body.appendChild(host);
     return shadow;
 }
@@ -316,47 +316,6 @@ function setupAuthOverlay(shadow, onSuccess) {
 }
 
 // ──────────────────────────────────────────────────────────────
-// Virtual account display helpers
-// ──────────────────────────────────────────────────────────────
-function showVirtualAccount(shadow, data) {
-    const box = shadow.querySelector('#sub-virtual-account');
-    if (!box) return;
-
-    shadow.querySelector('#va-bank').textContent   = data.bank_name    ?? '—';
-    shadow.querySelector('#va-number').textContent = data.account_number ?? '—';
-    shadow.querySelector('#va-amount').textContent = `₦${(data.amount ?? 0).toLocaleString()}`;
-
-    const expiryEl = shadow.querySelector('#va-expiry');
-    if (data.expires_at) {
-        const exp = new Date(data.expires_at);
-        expiryEl.textContent = `Expires: ${exp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
-    } else {
-        expiryEl.textContent = '';
-    }
-
-    const noteEl = shadow.querySelector('#va-note');
-    if (noteEl) noteEl.textContent = data.note ?? '';
-
-    box.style.display = 'block';
-
-    // Copy account number button
-    const copyBtn = shadow.querySelector('#va-copy-btn');
-    if (copyBtn) {
-        copyBtn.onclick = () => {
-            navigator.clipboard.writeText(data.account_number ?? '').then(() => {
-                copyBtn.textContent = '✓ Copied';
-                setTimeout(() => { copyBtn.textContent = 'Copy'; }, 2000);
-            });
-        };
-    }
-}
-
-function hideVirtualAccount(shadow) {
-    const box = shadow.querySelector('#sub-virtual-account');
-    if (box) box.style.display = 'none';
-}
-
-// ──────────────────────────────────────────────────────────────
 // Dashboard overlay wiring
 // ──────────────────────────────────────────────────────────────
 function setupDashboardOverlay(shadow, profile, subscription) {
@@ -461,6 +420,7 @@ function setupDashboardOverlay(shadow, profile, subscription) {
                     COUPON_EXHAUSTED:   'Coupon has reached its limit.',
                     ALREADY_SUBSCRIBED: 'Already subscribed.',
                     NETWORK_ERROR:      'Network error. Try again.',
+                    NO_SESSION:         'Session expired. Please refresh the page.',
                 };
                 msgEl.className = 'pw-msg error';
                 msgEl.textContent = errMap[result.error] ?? 'Something went wrong.';
@@ -468,12 +428,12 @@ function setupDashboardOverlay(shadow, profile, subscription) {
             return;
         }
 
-        // ── Paid plan — initiate virtual account payment ─────
+        // ── Paid plan — open Flutterwave hosted checkout ────────
         btn.disabled = true;
-        btn.textContent = 'Creating payment...';
+        btn.textContent = 'Opening payment...';
         msgEl.style.display = 'block';
         msgEl.className = 'pw-msg warning';
-        msgEl.textContent = '⏳ Generating your payment details...';
+        msgEl.textContent = '⏳ Creating your payment session...';
 
         const initiated = await initiatePayment(profile.id, profile.email, appliedCoupon);
 
@@ -485,20 +445,21 @@ function setupDashboardOverlay(shadow, profile, subscription) {
             return;
         }
 
-        // Show virtual account details
-        showVirtualAccount(shadow, initiated);
+        // Open Flutterwave's hosted checkout in a new tab
+        window.open(initiated.payment_link, '_blank');
 
-        // Start polling in background
+        msgEl.className = 'pw-msg warning';
+        msgEl.textContent = '⏳ Waiting for payment confirmation...';
+
         const cancelBtn = shadow.querySelector('#sub-cancel-poll');
         if (cancelBtn) cancelBtn.style.display = 'inline-block';
 
+        // Poll in background until confirmed
         const result = await pollPayment(initiated.txRef, (secs) => {
-            const el = shadow.querySelector('#sub-poll-timer');
-            if (el) el.textContent = `Checking every 8s... (${secs}s elapsed)`;
+            msgEl.textContent = `⏳ Waiting for payment... (${secs}s)`;
         });
 
         if (cancelBtn) cancelBtn.style.display = 'none';
-        hideVirtualAccount(shadow);
         btn.disabled = false;
         btn.textContent = isRenew ? 'Renew Subscription' : 'Pay ₦1,000';
 

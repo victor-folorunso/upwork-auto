@@ -1,2 +1,2 @@
 [functions.verify-payment]
-verify_jwt = true
+verify_jwt = false

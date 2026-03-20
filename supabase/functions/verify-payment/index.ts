@@ -12,8 +12,8 @@
 //   { ok: false, status: 'duplicate' }  — already processed
 //   { error: string }                   — something went wrong
 //
-// Required Supabase secrets:
-//   FLW_SECRET_KEY  — your Flutterwave secret key (from Flutterwave dashboard → API Keys)
+// NOTE: coupon counter increments are handled exclusively by the
+// flutterwave-webhook function to prevent double-counting.
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
@@ -31,7 +31,6 @@ serve(async (req) => {
     if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
 
     // ── Verify the user's JWT ─────────────────────────────────
-    // Creates a client scoped to the calling user — rejects invalid/missing tokens
     const authHeader = req.headers.get("Authorization");
     if (!authHeader) return json({ error: "MISSING_AUTH" }, 401);
 
@@ -80,8 +79,7 @@ serve(async (req) => {
             }
         );
         flwData = await flwRes.json();
-    } catch (e) {
-        console.error("Flutterwave API error:", e);
+    } catch (_) {
         return json({ error: "FLW_UNREACHABLE" }, 502);
     }
 
@@ -89,24 +87,22 @@ serve(async (req) => {
     const status = (flwData?.data as Record<string, unknown>)?.status as string;
 
     if (flwData?.status !== "success" || status !== "successful") {
-        // Not paid yet — tell the extension to keep polling
         return json({ ok: false, status: "pending" });
     }
 
     // ── Payment confirmed — activate subscription ─────────────
+    // Coupon counter is NOT incremented here — the webhook handles that.
+    // We only look up the coupon ID to record it on the profile.
     const couponCode = parts[3] && parts[3] !== "none" ? parts[3] : null;
     let couponId: string | null = null;
 
     if (couponCode) {
-        const { error: couponErr } = await adminClient.rpc("redeem_coupon", { p_code: couponCode });
-        if (!couponErr) {
-            const { data: coupon } = await adminClient
-                .from("coupons")
-                .select("id")
-                .eq("code", couponCode.toUpperCase().trim())
-                .single();
-            couponId = coupon?.id ?? null;
-        }
+        const { data: coupon } = await adminClient
+            .from("coupons")
+            .select("id")
+            .eq("code", couponCode.toUpperCase().trim())
+            .single();
+        couponId = coupon?.id ?? null;
     }
 
     // Extend 30 days from now (or from current expiry if still active)
