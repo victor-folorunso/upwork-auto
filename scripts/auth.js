@@ -6,6 +6,7 @@ const WIZARD_CONFIG = {
     supabaseUrl:        'https://bszdgbpftqdmlnpqqzmq.supabase.co',
     supabaseAnonKey:    'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJzemRnYnBmdHFkbWxucHFxem1xIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQwMDM2NzYsImV4cCI6MjA4OTU3OTY3Nn0.X9C8Hgr76BsV7XOrXnVCuIrM3e4s6e48T2jpgp8Ey0w',
     webhookEndpoint:    'https://bszdgbpftqdmlnpqqzmq.supabase.co/functions/v1/flutterwave-webhook',
+    verifyEndpoint:     'https://bszdgbpftqdmlnpqqzmq.supabase.co/functions/v1/verify-payment',
     flutterwavePayLink: 'https://flutterwave.com/pay/YOUR_LINK', // TODO: replace
     trialDays:          30,
 };
@@ -69,37 +70,27 @@ async function clearStatusCache() {
 }
 
 // ── Auth: sign up (sends OTP, does NOT auto-confirm) ──────────
-// Supabase sends a 6-digit OTP to the user's email.
-// Call wizardVerifySignupOtp() after to complete verification.
 async function wizardSignUp(email, password) {
     const { data, error } = await _supabase.auth.signUp({
         email,
         password,
-        options: {
-            // Tell Supabase to send OTP instead of a magic link.
-            // In your Supabase dashboard set Auth > Email Templates > Confirm signup
-            // to use {{ .Token }} (the 6-digit code) — see email_templates.md
-            emailRedirectTo: undefined,
-        }
+        options: { emailRedirectTo: undefined },
     });
     if (error) return { ok: false, error: error.message };
-    // data.user exists but session is null until OTP is verified
     return { ok: true, email };
 }
 
 // ── Auth: verify signup OTP ───────────────────────────────────
 async function wizardVerifySignupOtp(email, token) {
     const { data, error } = await _supabase.auth.verifyOtp({
-        email,
-        token,
-        type: 'signup',
+        email, token, type: 'signup',
     });
     if (error) return { ok: false, error: error.message };
     await clearStatusCache();
     return { ok: true, session: data.session };
 }
 
-// ── Auth: sign in (no OTP needed for login) ───────────────────
+// ── Auth: sign in ─────────────────────────────────────────────
 async function wizardSignIn(email, password) {
     const { data, error } = await _supabase.auth.signInWithPassword({ email, password });
     if (error) return { ok: false, error: error.message };
@@ -114,8 +105,6 @@ async function wizardSignOut() {
 }
 
 // ── Auth: forgot password — sends OTP ────────────────────────
-// After user receives OTP, call wizardVerifyRecoveryOtp() then
-// wizardUpdatePassword() to complete the reset.
 async function wizardForgotPassword(email) {
     const { error } = await _supabase.auth.resetPasswordForEmail(email);
     if (error) return { ok: false, error: error.message };
@@ -125,16 +114,14 @@ async function wizardForgotPassword(email) {
 // ── Auth: verify password reset OTP ──────────────────────────
 async function wizardVerifyRecoveryOtp(email, token) {
     const { data, error } = await _supabase.auth.verifyOtp({
-        email,
-        token,
-        type: 'recovery',
+        email, token, type: 'recovery',
     });
     if (error) return { ok: false, error: error.message };
     await clearStatusCache();
     return { ok: true, session: data.session };
 }
 
-// ── Auth: set new password (after recovery OTP verified) ──────
+// ── Auth: set new password ────────────────────────────────────
 async function wizardUpdatePassword(newPassword) {
     const { error } = await _supabase.auth.updateUser({ password: newPassword });
     if (error) return { ok: false, error: error.message };
@@ -332,9 +319,14 @@ async function saveCustomPrompt(userId, customPrompt) {
 }
 
 // ── Payment URL builder ───────────────────────────────────────
+// Generates a unique tx_ref and appends it to the payment link.
+// tx_ref format: wizard_<userId>_<timestamp>_<coupon_or_none>
 function buildPaymentUrl(userId, coupon) {
     const txRef = `wizard_${userId}_${Date.now()}_${coupon ? coupon.toUpperCase() : 'none'}`;
-    return `${WIZARD_CONFIG.flutterwavePayLink}?tx_ref=${txRef}`;
+    return {
+        url:   `${WIZARD_CONFIG.flutterwavePayLink}?tx_ref=${txRef}`,
+        txRef,
+    };
 }
 
 // ── Free coupon redemption ────────────────────────────────────
@@ -351,4 +343,63 @@ async function redeemFreeCoupon(userId, coupon) {
     } catch (_) {
         return { ok: false, error: 'NETWORK_ERROR' };
     }
+}
+
+// ── Payment polling ───────────────────────────────────────────
+// Polls the verify-payment Edge Function every 8 seconds.
+// The secret key never leaves the server — the Edge Function
+// handles the Flutterwave API call.
+//
+// onTick(secondsElapsed) — called on each pending check so the
+// UI can show a live "Checking... Xs" counter.
+//
+// Returns: { ok: true } | { ok: false, error: 'TIMEOUT' | 'CANCELLED' | string }
+const POLL_INTERVAL_MS = 8000;   // 8 seconds between checks
+const POLL_TIMEOUT_MS  = 600000; // stop after 10 minutes
+
+let _pollCancelled = false;
+
+function cancelPoll() { _pollCancelled = true; }
+
+async function pollPayment(txRef, onTick) {
+    _pollCancelled = false;
+    const session = await getSession();
+    if (!session) return { ok: false, error: 'NO_SESSION' };
+
+    const started = Date.now();
+
+    while (Date.now() - started < POLL_TIMEOUT_MS) {
+        if (_pollCancelled) return { ok: false, error: 'CANCELLED' };
+
+        try {
+            const res = await fetch(WIZARD_CONFIG.verifyEndpoint, {
+                method:  'POST',
+                headers: {
+                    'Content-Type':  'application/json',
+                    'Authorization': `Bearer ${session.access_token}`,
+                },
+                body: JSON.stringify({ tx_ref: txRef }),
+            });
+
+            const data = await res.json();
+
+            if (data.ok) {
+                await clearStatusCache();
+                return { ok: true };
+            }
+
+            if (data.error && data.error !== 'NO_SESSION') {
+                // Hard error — stop polling
+                return { ok: false, error: data.error };
+            }
+
+        } catch (_) {
+            // Network blip — keep trying
+        }
+
+        if (onTick) onTick(Math.floor((Date.now() - started) / 1000));
+        await new Promise(r => setTimeout(r, POLL_INTERVAL_MS));
+    }
+
+    return { ok: false, error: 'TIMEOUT' };
 }

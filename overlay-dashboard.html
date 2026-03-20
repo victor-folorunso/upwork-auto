@@ -64,12 +64,24 @@
           <div class="btn-stack" style="margin-top:12px">
             <button class="btn-main full-width" id="sub-pay-btn">Pay with Flutterwave</button>
           </div>
-          <div class="pw-hint">Payment opens in a new tab. Come back here after paying — your status updates automatically within a minute.</div>
+          <!-- Cancel poll button — hidden until payment tab is opened -->
+          <div class="btn-stack" style="margin-top:6px">
+            <button class="btn-secondary full-width" id="sub-cancel-poll" style="display:none">
+              ✕ Stop waiting
+            </button>
+          </div>
+          <div class="pw-hint">Payment opens in a new tab. This panel will detect your payment automatically — no need to refresh.</div>
         </div>
 
         <div id="sub-renew-section" style="display:none">
           <div class="btn-stack" style="margin-top:12px">
             <button class="btn-main full-width" id="sub-renew-btn">Renew Subscription</button>
+          </div>
+          <!-- Cancel poll button for renewal too -->
+          <div class="btn-stack" style="margin-top:6px">
+            <button class="btn-secondary full-width" id="sub-cancel-poll-renew" style="display:none">
+              ✕ Stop waiting
+            </button>
           </div>
         </div>
 

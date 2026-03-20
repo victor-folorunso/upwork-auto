@@ -404,12 +404,14 @@ function setupDashboardOverlay(shadow, profile, subscription) {
     };
 
     async function handlePayClick(btnId, isRenew = false) {
-        const btn = shadow.querySelector(`#${btnId}`);
+        const btn    = shadow.querySelector(`#${btnId}`);
+        const msgEl  = shadow.querySelector('#sub-coupon-msg');
+
+        // ── Free coupon (MAVERIC100) — no payment needed ──────
         if (!isRenew && appliedCoupon === 'MAVERIC100') {
             btn.disabled = true; btn.textContent = 'Processing...';
             const result = await redeemFreeCoupon(profile.id, 'MAVERIC100');
             btn.disabled = false;
-            const msgEl = shadow.querySelector('#sub-coupon-msg');
             msgEl.style.display = 'block';
             if (result.ok) {
                 msgEl.className = 'pw-msg success';
@@ -427,11 +429,50 @@ function setupDashboardOverlay(shadow, profile, subscription) {
             }
             return;
         }
-        window.open(buildPaymentUrl(profile.id, appliedCoupon), '_blank');
+
+        // ── Paid plan — open payment link then poll ───────────
+        const { url, txRef } = buildPaymentUrl(profile.id, appliedCoupon);
+        window.open(url, '_blank');
+
+        // Show waiting state
+        btn.disabled = true;
+        msgEl.style.display = 'block';
+        msgEl.className = 'pw-msg warning';
+        msgEl.textContent = '⏳ Waiting for payment... (0s)';
+
+        const cancelBtn = shadow.querySelector('#sub-cancel-poll');
+        if (cancelBtn) cancelBtn.style.display = 'inline-block';
+
+        // Poll until confirmed or cancelled
+        const result = await pollPayment(txRef, (secs) => {
+            msgEl.textContent = `⏳ Waiting for payment... (${secs}s)`;
+        });
+
+        if (cancelBtn) cancelBtn.style.display = 'none';
+        btn.disabled = false;
+
+        if (result.ok) {
+            msgEl.className = 'pw-msg success';
+            msgEl.textContent = '✅ Payment confirmed! Activating...';
+            setTimeout(() => location.reload(), 1200);
+        } else if (result.error === 'CANCELLED') {
+            msgEl.className = 'pw-msg warning';
+            msgEl.textContent = 'Payment check cancelled. Click Refresh status after you pay.';
+        } else if (result.error === 'TIMEOUT') {
+            msgEl.className = 'pw-msg warning';
+            msgEl.textContent = 'Timed out waiting. Click ↻ Refresh status after you pay.';
+        } else {
+            msgEl.className = 'pw-msg error';
+            msgEl.textContent = `Payment check failed: ${result.error}`;
+        }
     }
 
     shadow.querySelector('#sub-pay-btn').onclick  = () => handlePayClick('sub-pay-btn');
     shadow.querySelector('#sub-renew-btn').onclick = () => handlePayClick('sub-renew-btn', true);
+
+    // Cancel poll buttons
+    shadow.querySelector('#sub-cancel-poll').onclick      = () => cancelPoll();
+    shadow.querySelector('#sub-cancel-poll-renew').onclick = () => cancelPoll();
 
     shadow.querySelector('#sub-refresh-btn').onclick = async () => {
         const btn = shadow.querySelector('#sub-refresh-btn');
