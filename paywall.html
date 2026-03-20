@@ -1,0 +1,48 @@
+<div class="wizard-sidebar" id="paywall-screen">
+
+  <div class="wiz-header">
+    <span class="wiz-title">⚡ Upwork Wizard</span>
+  </div>
+
+  <section class="paywall-hero">
+    <div class="paywall-icon">🔒</div>
+    <div class="paywall-title">Your free trial has ended</div>
+    <div class="paywall-sub">Subscribe for <strong>₦1,000/month</strong> to keep automating your Upwork profile.</div>
+  </section>
+
+  <!-- ── Step 1: Email + optional coupon ── -->
+  <section id="paywall-step-1">
+    <label class="section-label">Your email</label>
+    <input type="email" id="pw-email" placeholder="you@example.com" class="pw-input" />
+
+    <label class="section-label" style="margin-top:10px">Coupon code (optional)</label>
+    <div class="pw-row">
+      <input type="text" id="pw-coupon" placeholder="e.g. MAVERIC50" class="pw-input" style="text-transform:uppercase" />
+      <button class="btn-main pw-apply-btn" id="pw-apply-coupon">Apply</button>
+    </div>
+    <div id="pw-coupon-msg" class="pw-msg" style="display:none"></div>
+
+    <div class="btn-stack" style="margin-top:12px">
+      <button class="btn-main full-width" id="pw-pay-btn">Pay ₦1,000 with Flutterwave</button>
+    </div>
+    <div class="pw-hint">You'll receive your license key by email after payment.</div>
+  </section>
+
+  <!-- ── Step 2: Enter license key after payment ── -->
+  <section id="paywall-step-2" style="display:none">
+    <label class="section-label">Enter your license key</label>
+    <input type="text" id="pw-license-key" placeholder="XXXXXXXX-XXXXXXXX-XXXXXXXX" class="pw-input" style="text-transform:uppercase; letter-spacing:1px" />
+    <div class="btn-stack" style="margin-top:8px">
+      <button class="btn-main full-width" id="pw-activate-btn">Activate</button>
+    </div>
+    <div id="pw-activate-msg" class="pw-msg" style="display:none"></div>
+    <div class="pw-hint" style="margin-top:8px">
+      <a href="#" id="pw-back-link">← Back</a>
+    </div>
+  </section>
+
+  <div id="paywall-status-box" style="display:none">
+    <div id="paywall-status-msg"></div>
+  </div>
+
+</div>

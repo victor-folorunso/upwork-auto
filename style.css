@@ -1,20 +1,34 @@
+/* ─────────────────────────────────────────────────────────────
+   style.css — Upwork Wizard
+   Covers: main sidebar, overlays (auth + dashboard), shared components
+───────────────────────────────────────────────────────────── */
+
 :host {
-  --bg-main: #121212;
-  --bg-card: #1e1e1e;
-  --primary: #14a800;
-  --primary-hover: #0f8200;
-  --danger: #c0392b;
-  --text-main: #ffffff;
-  --text-dim: #b3b3b3;
-  --border: #333333;
-  --input-bg: #1a1a1a;
-  --success-bg: #112911;
+  --bg-main:      #121212;
+  --bg-card:      #1e1e1e;
+  --bg-overlay:   #181818;
+  --primary:      #14a800;
+  --primary-hover:#0f8200;
+  --danger:       #c0392b;
+  --secondary:    #2a2a2a;
+  --text-main:    #ffffff;
+  --text-dim:     #b3b3b3;
+  --border:       #333333;
+  --input-bg:     #1a1a1a;
+  --success-bg:   #112911;
   --success-text: #72f272;
-  --warning-bg: #292911;
+  --warning-bg:   #292911;
   --warning-text: #f2f272;
-  --error-bg: #2d1a1a;
-  --error-text: #ff6b6b;
+  --error-bg:     #2d1a1a;
+  --error-text:   #ff6b6b;
+  --trial-bg:     #0d1f3c;
+  --trial-text:   #6ab0f5;
+  --trial-border: #1a3a6a;
 }
+
+/* ═══════════════════════════════════════════════════════════
+   MAIN SIDEBAR
+═══════════════════════════════════════════════════════════ */
 
 .wizard-sidebar {
   background: var(--bg-main);
@@ -37,34 +51,50 @@
   padding: 10px 14px;
   border-bottom: 1px solid var(--border);
   background: var(--bg-card);
+  gap: 8px;
 }
 
 .wiz-title {
   font-weight: 700;
   font-size: 13px;
   letter-spacing: .3px;
-}
-
-.btn-icon {
-  background: transparent;
-  border: 1px solid var(--border);
-  color: var(--text-dim);
-  border-radius: 4px;
-  padding: 4px 8px;
-  font-size: 11px;
-  cursor: pointer;
-  transition: color .2s, border-color .2s;
   white-space: nowrap;
-  flex: 0 0 auto;  /* Fix: override global button flex:1 so it only takes content width */
-  width: auto;
 }
 
-.btn-icon:hover {
-  color: var(--text-main);
-  border-color: var(--primary);
+.header-actions {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
 }
 
-/* ── Watch note ── */
+/* ── Banners ── */
+.trial-note {
+  background: var(--trial-bg);
+  color: var(--trial-text);
+  padding: 7px 14px;
+  font-size: 11px;
+  font-weight: 600;
+  text-align: center;
+  border-bottom: 1px solid var(--trial-border);
+}
+
+.trial-note a, .expired-note a {
+  color: inherit;
+  font-weight: 700;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.expired-note {
+  background: var(--error-bg);
+  color: var(--error-text);
+  padding: 7px 14px;
+  font-size: 11px;
+  font-weight: 600;
+  text-align: center;
+  border-bottom: 1px solid #4a2020;
+}
+
 .watch-note {
   background: var(--warning-bg);
   color: var(--warning-text);
@@ -106,14 +136,8 @@ textarea {
   line-height: 1.4;
 }
 
-textarea:focus {
-  outline: none;
-  border-color: var(--primary);
-}
-
-textarea::placeholder {
-  color: #555;
-}
+textarea:focus { outline: none; border-color: var(--primary); }
+textarea::placeholder { color: #555; }
 
 /* ── Buttons ── */
 .btn-stack {
@@ -133,20 +157,29 @@ button {
   transition: opacity .15s, background .15s;
 }
 
-button:hover { opacity: .88; }
-button:active { opacity: .7; }
+button:hover  { opacity: .88; }
+button:active { opacity: .7;  }
 
-.btn-main {
-  background: var(--primary);
-  color: #fff;
+.btn-main      { background: var(--primary); color: #fff; }
+.btn-danger    { background: var(--danger);  color: #fff; }
+.btn-secondary { background: var(--secondary); color: var(--text-main); border: 1px solid var(--border); }
+.full-width    { flex: unset; width: 100%; }
+
+.btn-icon {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  border-radius: 4px;
+  padding: 4px 8px;
+  font-size: 11px;
+  cursor: pointer;
+  transition: color .2s, border-color .2s;
+  white-space: nowrap;
+  flex: 0 0 auto;
+  width: auto;
 }
 
-.btn-danger {
-  background: var(--danger);
-  color: #fff;
-}
-
-.full-width { flex: unset; width: 100%; }
+.btn-icon:hover { color: var(--text-main); border-color: var(--primary); }
 
 /* ── Parse summary ── */
 .parse-summary {
@@ -162,16 +195,8 @@ button:active { opacity: .7; }
   border-bottom: 1px solid var(--border);
 }
 
-.summary-row {
-  color: var(--text-dim);
-  font-size: 11px;
-  padding: 2px 0;
-}
-
-.summary-row span {
-  color: var(--primary);
-  font-weight: 700;
-}
+.summary-row { color: var(--text-dim); font-size: 11px; padding: 2px 0; }
+.summary-row span { color: var(--primary); font-weight: 700; }
 
 /* ── Status box ── */
 #status-box {
@@ -185,14 +210,12 @@ button:active { opacity: .7; }
 
 .close-status {
   position: absolute;
-  top: 6px;
-  right: 10px;
+  top: 6px; right: 10px;
   cursor: pointer;
   font-size: 15px;
   color: var(--text-dim);
   line-height: 1;
 }
-
 .close-status:hover { color: var(--text-main); }
 
 #status-msg {
@@ -200,4 +223,294 @@ button:active { opacity: .7; }
   overflow-y: auto;
   padding-right: 16px;
   line-height: 1.5;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   SHARED OVERLAY SYSTEM
+   Both auth and dashboard use these base styles.
+   The backdrop covers the full viewport. The card is centered.
+═══════════════════════════════════════════════════════════ */
+
+.wz-overlay-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.72);
+  z-index: 2147483646;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: Inter, system-ui, sans-serif;
+  font-size: 12px;
+  color: var(--text-main);
+}
+
+.wz-overlay-card {
+  background: var(--bg-overlay);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  box-shadow: 0 24px 60px rgba(0,0,0,.85);
+  width: 420px;
+  max-height: 90vh;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.wz-overlay-card--wide {
+  width: 560px;
+}
+
+.wz-overlay-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-card);
+  border-radius: 14px 14px 0 0;
+  flex-shrink: 0;
+}
+
+.overlay-close {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  border-radius: 4px;
+  padding: 3px 7px;
+  font-size: 12px;
+  cursor: pointer;
+  flex: 0 0 auto;
+  width: auto;
+  line-height: 1.4;
+}
+.overlay-close:hover { color: var(--text-main); border-color: var(--danger); }
+
+/* ── Shared input ── */
+.pw-input {
+  width: 100%;
+  background: var(--input-bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-main);
+  padding: 8px 10px;
+  font-size: 12px;
+  font-family: inherit;
+  box-sizing: border-box;
+}
+.pw-input:focus { outline: none; border-color: var(--primary); }
+.pw-input::placeholder { color: #555; }
+
+.pw-row { display: flex; gap: 6px; margin-top: 4px; }
+.pw-row .pw-input { flex: 1; }
+.pw-apply-btn { flex: 0 0 auto; padding: 8px 10px; width: auto; }
+
+.pw-msg {
+  margin-top: 6px;
+  font-size: 11px;
+  font-weight: 500;
+  padding: 6px 9px;
+  border-radius: 4px;
+}
+.pw-msg.success { background: var(--success-bg); color: var(--success-text); }
+.pw-msg.error   { background: var(--error-bg);   color: var(--error-text);   }
+.pw-msg.warning { background: var(--warning-bg); color: var(--warning-text); }
+
+.pw-hint {
+  margin-top: 8px;
+  font-size: 10px;
+  color: var(--text-dim);
+  text-align: center;
+  line-height: 1.5;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   AUTH OVERLAY
+═══════════════════════════════════════════════════════════ */
+
+.auth-hero {
+  padding: 22px 20px 10px;
+  text-align: center;
+  border-bottom: 1px solid var(--border);
+}
+
+.auth-hero-title {
+  font-size: 15px;
+  font-weight: 700;
+  margin-bottom: 6px;
+}
+
+.auth-hero-sub {
+  font-size: 11px;
+  color: var(--text-dim);
+  line-height: 1.6;
+}
+
+.auth-body {
+  padding: 16px 20px 20px;
+}
+
+.auth-switch {
+  margin-top: 12px;
+  text-align: center;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.auth-switch a {
+  color: var(--primary);
+  text-decoration: none;
+  cursor: pointer;
+  font-weight: 600;
+}
+.auth-switch a:hover { text-decoration: underline; }
+
+/* Device mismatch */
+.device-info-box {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 10px 12px;
+  font-size: 11px;
+  color: var(--text-dim);
+  line-height: 1.6;
+  margin-top: 4px;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   DASHBOARD OVERLAY
+═══════════════════════════════════════════════════════════ */
+
+/* ── Tabs ── */
+.dash-tabs {
+  display: flex;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-card);
+  flex-shrink: 0;
+}
+
+.dash-tab {
+  flex: 1;
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--text-dim);
+  padding: 10px 0;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: color .15s, border-color .15s;
+  border-radius: 0;
+}
+
+.dash-tab:hover  { color: var(--text-main); opacity: 1; }
+.dash-tab.active { color: var(--primary); border-bottom-color: var(--primary); opacity: 1; }
+
+/* ── Panel ── */
+.dash-panel { display: flex; flex-direction: column; }
+.dash-panel-inner { padding: 16px 20px 20px; }
+
+/* ── Prompt editor ── */
+.prompt-note {
+  font-size: 11px;
+  color: var(--text-dim);
+  line-height: 1.5;
+  padding: 8px 10px;
+  background: var(--bg-card);
+  border-radius: 6px;
+  border: 1px solid var(--border);
+}
+
+.prompt-editable {
+  min-height: 180px;
+  font-size: 11px;
+  line-height: 1.5;
+  font-family: 'Fira Code', 'Courier New', monospace;
+}
+
+.locked-badge {
+  background: #2a1f00;
+  color: #f2c94c;
+  font-size: 9px;
+  font-weight: 700;
+  padding: 1px 5px;
+  border-radius: 3px;
+  text-transform: uppercase;
+  letter-spacing: .4px;
+  vertical-align: middle;
+}
+
+.prompt-locked {
+  background: #0f0f0f;
+  border: 1px solid #2a2a2a;
+  border-radius: 6px;
+  padding: 10px 12px;
+  font-size: 10px;
+  font-family: 'Fira Code', 'Courier New', monospace;
+  color: #555;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  max-height: 140px;
+  overflow-y: auto;
+  cursor: not-allowed;
+  user-select: none;
+}
+
+/* ── Subscription tab ── */
+.sub-status-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 16px;
+  text-align: center;
+}
+
+.sub-status-icon  { font-size: 24px; margin-bottom: 6px; }
+.sub-status-label { font-size: 14px; font-weight: 700; }
+.sub-status-detail { font-size: 11px; color: var(--text-dim); margin-top: 4px; }
+
+.sub-price-row {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  margin-top: 16px;
+}
+.sub-price        { font-size: 22px; font-weight: 800; color: var(--primary); }
+.sub-price-period { font-size: 12px; color: var(--text-dim); }
+
+/* ── Account tab ── */
+.account-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+}
+.account-label { color: var(--text-dim); }
+.account-value { color: var(--text-main); font-weight: 600; }
+
+.device-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 6px;
+}
+
+.device-card-info {
+  font-size: 11px;
+  color: var(--text-dim);
+  line-height: 1.5;
+  flex: 1;
+}
+
+.device-remove-btn {
+  flex: 0 0 auto;
+  width: auto;
+  padding: 5px 10px;
+  font-size: 10px;
 }
