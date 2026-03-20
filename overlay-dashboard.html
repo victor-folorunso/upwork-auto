@@ -62,22 +62,43 @@
           </div>
           <div id="sub-coupon-msg" class="pw-msg" style="display:none"></div>
           <div class="btn-stack" style="margin-top:12px">
-            <button class="btn-main full-width" id="sub-pay-btn">Pay with Flutterwave</button>
+            <button class="btn-main full-width" id="sub-pay-btn">Pay ₦1,000</button>
           </div>
-          <!-- Cancel poll button — hidden until payment tab is opened -->
+
+          <!-- Virtual account box — shown after clicking Pay -->
+          <div id="sub-virtual-account" class="va-box" style="display:none">
+            <div class="va-title">Transfer the exact amount to this account</div>
+            <div class="va-row">
+              <span class="va-label">Bank</span>
+              <span class="va-value" id="va-bank">—</span>
+            </div>
+            <div class="va-row">
+              <span class="va-label">Account No.</span>
+              <span class="va-value va-account" id="va-number">—</span>
+              <button class="btn-icon" id="va-copy-btn">Copy</button>
+            </div>
+            <div class="va-row">
+              <span class="va-label">Amount</span>
+              <span class="va-value va-amount" id="va-amount">—</span>
+            </div>
+            <div class="va-expiry" id="va-expiry"></div>
+            <div class="va-note" id="va-note"></div>
+            <div class="va-poll-note" id="sub-poll-timer">Checking every 8s...</div>
+          </div>
+
+          <!-- Cancel poll button — shown while waiting for payment -->
           <div class="btn-stack" style="margin-top:6px">
             <button class="btn-secondary full-width" id="sub-cancel-poll" style="display:none">
               ✕ Stop waiting
             </button>
           </div>
-          <div class="pw-hint">Payment opens in a new tab. This panel will detect your payment automatically — no need to refresh.</div>
+          <div class="pw-hint">Transfer the exact amount shown — subscription activates automatically once confirmed.</div>
         </div>
 
         <div id="sub-renew-section" style="display:none">
           <div class="btn-stack" style="margin-top:12px">
             <button class="btn-main full-width" id="sub-renew-btn">Renew Subscription</button>
           </div>
-          <!-- Cancel poll button for renewal too -->
           <div class="btn-stack" style="margin-top:6px">
             <button class="btn-secondary full-width" id="sub-cancel-poll-renew" style="display:none">
               ✕ Stop waiting
@@ -110,7 +131,7 @@
           <div class="device-card-info" id="acct-device-info">Loading...</div>
           <button class="btn-danger device-remove-btn" id="acct-remove-device">Remove</button>
         </div>
-        <div class="pw-hint">Removing your device lets you log in from a different browser or machine.</div>
+        <div class="pw-hint">Removing your device logs you out everywhere and lets you re-register from a new browser.</div>
 
         <div id="acct-msg" class="pw-msg" style="display:none; margin-top:8px"></div>
 

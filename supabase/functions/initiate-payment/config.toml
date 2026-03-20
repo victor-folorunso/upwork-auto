@@ -1,0 +1,2 @@
+[functions.initiate-payment]
+verify_jwt = true

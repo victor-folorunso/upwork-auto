@@ -3,12 +3,12 @@
 //           Uses OTP email verification — no redirect links.
 
 const WIZARD_CONFIG = {
-    supabaseUrl:        'https://bszdgbpftqdmlnpqqzmq.supabase.co',
-    supabaseAnonKey:    'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJzemRnYnBmdHFkbWxucHFxem1xIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQwMDM2NzYsImV4cCI6MjA4OTU3OTY3Nn0.X9C8Hgr76BsV7XOrXnVCuIrM3e4s6e48T2jpgp8Ey0w',
-    webhookEndpoint:    'https://bszdgbpftqdmlnpqqzmq.supabase.co/functions/v1/flutterwave-webhook',
-    verifyEndpoint:     'https://bszdgbpftqdmlnpqqzmq.supabase.co/functions/v1/verify-payment',
-    flutterwavePayLink: 'https://flutterwave.com/pay/YOUR_LINK', // TODO: replace
-    trialDays:          30,
+    supabaseUrl:       'https://bszdgbpftqdmlnpqqzmq.supabase.co',
+    supabaseAnonKey:   'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJzemRnYnBmdHFkbWxucHFxem1xIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQwMDM2NzYsImV4cCI6MjA4OTU3OTY3Nn0.X9C8Hgr76BsV7XOrXnVCuIrM3e4s6e48T2jpgp8Ey0w',
+    webhookEndpoint:   'https://bszdgbpftqdmlnpqqzmq.supabase.co/functions/v1/flutterwave-webhook',
+    verifyEndpoint:    'https://bszdgbpftqdmlnpqqzmq.supabase.co/functions/v1/verify-payment',
+    initiateEndpoint:  'https://bszdgbpftqdmlnpqqzmq.supabase.co/functions/v1/initiate-payment',
+    trialDays:         30,
 };
 
 // ── Supabase client ───────────────────────────────────────────
@@ -173,8 +173,12 @@ async function verifyDevice(userId, profile) {
 }
 
 async function removeDevice(userId) {
+    // Clear device from DB
     await _supabase.from('user_profiles').update({ device: null }).eq('id', userId);
     await clearStatusCache();
+    // Sign out globally — invalidates session on ALL devices so the
+    // other device gets booted immediately rather than looping on mismatch
+    await _supabase.auth.signOut({ scope: 'global' });
 }
 
 // ── Subscription check ────────────────────────────────────────
@@ -318,18 +322,42 @@ async function saveCustomPrompt(userId, customPrompt) {
     return { ok: true };
 }
 
-// ── Payment URL builder ───────────────────────────────────────
-// Generates a unique tx_ref and appends it to the payment link.
-// tx_ref format: wizard_<userId>_<timestamp>_<coupon_or_none>
-function buildPaymentUrl(userId, coupon) {
-    const txRef = `wizard_${userId}_${Date.now()}_${coupon ? coupon.toUpperCase() : 'none'}`;
-    return {
-        url:   `${WIZARD_CONFIG.flutterwavePayLink}?tx_ref=${txRef}`,
-        txRef,
-    };
+// ── tx_ref builder ────────────────────────────────────────────
+// Creates a unique transaction reference for this payment attempt.
+// format: wizard_<userId>_<timestamp>_<coupon_or_none>
+function buildTxRef(userId, coupon) {
+    return `wizard_${userId}_${Date.now()}_${coupon ? coupon.toUpperCase() : 'none'}`;
 }
 
-// ── Free coupon redemption ────────────────────────────────────
+// ── Initiate payment — creates Flutterwave virtual account ────
+// Called when user clicks Pay. Returns virtual account details
+// for the user to transfer the exact amount to.
+// amount: 1000 (full) or 500 (MAVERIC50 applied)
+async function initiatePayment(userId, email, coupon) {
+    const amount = (coupon === 'MAVERIC50') ? 500 : 1000;
+    const txRef  = buildTxRef(userId, coupon);
+
+    const session = await getSession();
+    if (!session) return { ok: false, error: 'NO_SESSION' };
+
+    try {
+        const res = await fetch(WIZARD_CONFIG.initiateEndpoint, {
+            method:  'POST',
+            headers: {
+                'Content-Type':  'application/json',
+                'Authorization': `Bearer ${session.access_token}`,
+            },
+            body: JSON.stringify({ tx_ref: txRef, amount, email }),
+        });
+        const data = await res.json();
+        if (!res.ok || !data.ok) return { ok: false, error: data.message ?? data.error ?? 'FLW_ERROR' };
+        return { ok: true, txRef, ...data };
+    } catch (_) {
+        return { ok: false, error: 'NETWORK_ERROR' };
+    }
+}
+
+// ── Free coupon redemption (MAVERIC100) ──────────────────────
 async function redeemFreeCoupon(userId, coupon) {
     try {
         const res = await fetch(WIZARD_CONFIG.webhookEndpoint, {
@@ -347,15 +375,12 @@ async function redeemFreeCoupon(userId, coupon) {
 
 // ── Payment polling ───────────────────────────────────────────
 // Polls the verify-payment Edge Function every 8 seconds.
-// The secret key never leaves the server — the Edge Function
-// handles the Flutterwave API call.
+// The Flutterwave secret key never leaves the server.
 //
-// onTick(secondsElapsed) — called on each pending check so the
-// UI can show a live "Checking... Xs" counter.
-//
+// onTick(secondsElapsed) — called on each pending check
 // Returns: { ok: true } | { ok: false, error: 'TIMEOUT' | 'CANCELLED' | string }
-const POLL_INTERVAL_MS = 8000;   // 8 seconds between checks
-const POLL_TIMEOUT_MS  = 600000; // stop after 10 minutes
+const POLL_INTERVAL_MS = 8000;
+const POLL_TIMEOUT_MS  = 600000; // 10 minutes
 
 let _pollCancelled = false;
 
@@ -389,7 +414,6 @@ async function pollPayment(txRef, onTick) {
             }
 
             if (data.error && data.error !== 'NO_SESSION') {
-                // Hard error — stop polling
                 return { ok: false, error: data.error };
             }
 

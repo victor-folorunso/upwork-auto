@@ -316,6 +316,47 @@ function setupAuthOverlay(shadow, onSuccess) {
 }
 
 // ──────────────────────────────────────────────────────────────
+// Virtual account display helpers
+// ──────────────────────────────────────────────────────────────
+function showVirtualAccount(shadow, data) {
+    const box = shadow.querySelector('#sub-virtual-account');
+    if (!box) return;
+
+    shadow.querySelector('#va-bank').textContent   = data.bank_name    ?? '—';
+    shadow.querySelector('#va-number').textContent = data.account_number ?? '—';
+    shadow.querySelector('#va-amount').textContent = `₦${(data.amount ?? 0).toLocaleString()}`;
+
+    const expiryEl = shadow.querySelector('#va-expiry');
+    if (data.expires_at) {
+        const exp = new Date(data.expires_at);
+        expiryEl.textContent = `Expires: ${exp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+    } else {
+        expiryEl.textContent = '';
+    }
+
+    const noteEl = shadow.querySelector('#va-note');
+    if (noteEl) noteEl.textContent = data.note ?? '';
+
+    box.style.display = 'block';
+
+    // Copy account number button
+    const copyBtn = shadow.querySelector('#va-copy-btn');
+    if (copyBtn) {
+        copyBtn.onclick = () => {
+            navigator.clipboard.writeText(data.account_number ?? '').then(() => {
+                copyBtn.textContent = '✓ Copied';
+                setTimeout(() => { copyBtn.textContent = 'Copy'; }, 2000);
+            });
+        };
+    }
+}
+
+function hideVirtualAccount(shadow) {
+    const box = shadow.querySelector('#sub-virtual-account');
+    if (box) box.style.display = 'none';
+}
+
+// ──────────────────────────────────────────────────────────────
 // Dashboard overlay wiring
 // ──────────────────────────────────────────────────────────────
 function setupDashboardOverlay(shadow, profile, subscription) {
@@ -339,8 +380,6 @@ function setupDashboardOverlay(shadow, profile, subscription) {
     shadow.querySelector('#dash-prompt-save').onclick = async () => {
         const btn = shadow.querySelector('#dash-prompt-save');
         btn.disabled = true; btn.textContent = 'Saving...';
-        // Save null if unchanged from default — so future default updates
-        // automatically reach users who haven't customized their prompt
         const val = customPromptEl.value.trim();
         const toSave = (val === DEFAULT_CUSTOM_PROMPT.trim()) ? null : val;
         const result = await saveCustomPrompt(profile.id, toSave);
@@ -355,7 +394,6 @@ function setupDashboardOverlay(shadow, profile, subscription) {
         customPromptEl.value = DEFAULT_CUSTOM_PROMPT;
         const btn = shadow.querySelector('#dash-prompt-reset');
         btn.disabled = true; btn.textContent = 'Resetting...';
-        // Save null directly — no need to click Save after reset
         const result = await saveCustomPrompt(profile.id, null);
         btn.disabled = false; btn.textContent = 'Reset to default';
         const el = shadow.querySelector('#prompt-save-msg');
@@ -393,7 +431,7 @@ function setupDashboardOverlay(shadow, profile, subscription) {
             msgEl.textContent = '100% off — no payment needed!';
         } else if (code === 'MAVERIC50') {
             appliedCoupon = code;
-            shadow.querySelector('#sub-pay-btn').textContent = 'Pay ₦500 with Flutterwave';
+            shadow.querySelector('#sub-pay-btn').textContent = 'Pay ₦500';
             msgEl.className = 'pw-msg success';
             msgEl.textContent = '50% off applied — pay ₦500.';
         } else {
@@ -430,26 +468,39 @@ function setupDashboardOverlay(shadow, profile, subscription) {
             return;
         }
 
-        // ── Paid plan — open payment link then poll ───────────
-        const { url, txRef } = buildPaymentUrl(profile.id, appliedCoupon);
-        window.open(url, '_blank');
-
-        // Show waiting state
+        // ── Paid plan — initiate virtual account payment ─────
         btn.disabled = true;
+        btn.textContent = 'Creating payment...';
         msgEl.style.display = 'block';
         msgEl.className = 'pw-msg warning';
-        msgEl.textContent = '⏳ Waiting for payment... (0s)';
+        msgEl.textContent = '⏳ Generating your payment details...';
 
+        const initiated = await initiatePayment(profile.id, profile.email, appliedCoupon);
+
+        if (!initiated.ok) {
+            btn.disabled = false;
+            btn.textContent = isRenew ? 'Renew Subscription' : 'Pay ₦1,000';
+            msgEl.className = 'pw-msg error';
+            msgEl.textContent = `Could not create payment: ${initiated.error}`;
+            return;
+        }
+
+        // Show virtual account details
+        showVirtualAccount(shadow, initiated);
+
+        // Start polling in background
         const cancelBtn = shadow.querySelector('#sub-cancel-poll');
         if (cancelBtn) cancelBtn.style.display = 'inline-block';
 
-        // Poll until confirmed or cancelled
-        const result = await pollPayment(txRef, (secs) => {
-            msgEl.textContent = `⏳ Waiting for payment... (${secs}s)`;
+        const result = await pollPayment(initiated.txRef, (secs) => {
+            const el = shadow.querySelector('#sub-poll-timer');
+            if (el) el.textContent = `Checking every 8s... (${secs}s elapsed)`;
         });
 
         if (cancelBtn) cancelBtn.style.display = 'none';
+        hideVirtualAccount(shadow);
         btn.disabled = false;
+        btn.textContent = isRenew ? 'Renew Subscription' : 'Pay ₦1,000';
 
         if (result.ok) {
             msgEl.className = 'pw-msg success';
@@ -457,10 +508,10 @@ function setupDashboardOverlay(shadow, profile, subscription) {
             setTimeout(() => location.reload(), 1200);
         } else if (result.error === 'CANCELLED') {
             msgEl.className = 'pw-msg warning';
-            msgEl.textContent = 'Payment check cancelled. Click Refresh status after you pay.';
+            msgEl.textContent = 'Stopped checking. Click ↻ Refresh status after you pay.';
         } else if (result.error === 'TIMEOUT') {
             msgEl.className = 'pw-msg warning';
-            msgEl.textContent = 'Timed out waiting. Click ↻ Refresh status after you pay.';
+            msgEl.textContent = 'Timed out. Click ↻ Refresh status if you already paid.';
         } else {
             msgEl.className = 'pw-msg error';
             msgEl.textContent = `Payment check failed: ${result.error}`;
@@ -471,7 +522,7 @@ function setupDashboardOverlay(shadow, profile, subscription) {
     shadow.querySelector('#sub-renew-btn').onclick = () => handlePayClick('sub-renew-btn', true);
 
     // Cancel poll buttons
-    shadow.querySelector('#sub-cancel-poll').onclick      = () => cancelPoll();
+    shadow.querySelector('#sub-cancel-poll').onclick       = () => cancelPoll();
     shadow.querySelector('#sub-cancel-poll-renew').onclick = () => cancelPoll();
 
     shadow.querySelector('#sub-refresh-btn').onclick = async () => {
@@ -506,7 +557,7 @@ function setupDashboardOverlay(shadow, profile, subscription) {
         const msgEl = shadow.querySelector('#acct-msg');
         msgEl.style.display = 'block';
         msgEl.className = 'pw-msg success';
-        msgEl.textContent = '✅ Device removed.';
+        msgEl.textContent = '✅ Device removed. You are now logged out everywhere.';
     };
 
     shadow.querySelector('#acct-logout-btn').onclick = async () => {
