@@ -1,0 +1,47 @@
+{
+  "manifest_version": 3,
+  "name": "Upwork Wizard",
+  "version": "3.0",
+  "description": "Automate and optimize your Upwork profile.",
+  "permissions": [
+    "storage",
+    "unlimitedStorage",
+    "scripting",
+    "tabs",
+    "activeTab",
+    "clipboardWrite"
+  ],
+  "host_permissions": [
+    "https://www.upwork.com/*",
+    "https://*.supabase.co/*"
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Upwork Wizard"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://www.upwork.com/*"],
+      "js": [
+        "scripts/supabase.min.js",
+        "scripts/human.js",
+        "scripts/parser.js",
+        "scripts/automator.js",
+        "scripts/auth.js",
+        "scripts/main.js"
+      ],
+      "run_at": "document_end"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "style.css",
+        "ui.html",
+        "overlay-auth.html",
+        "overlay-dashboard.html"
+      ],
+      "matches": ["https://www.upwork.com/*"]
+    }
+  ]
+}
