@@ -2,36 +2,58 @@
 
 // ──────────────────────────────────────────────────────────────
 // CAPTCHA detection
+// Monitors for Cloudflare Turnstile challenge which Upwork serves
+// as a full-page takeover with a unique .up-challenge-container wrapper.
+// A MutationObserver watches the DOM continuously while automation runs
+// so any mid-run CAPTCHA appearance is caught immediately.
 // ──────────────────────────────────────────────────────────────
-const CAPTCHA_SIGNALS = [
-    '[data-qa="captcha"]',
-    '.cf-challenge-running',
-    '#challenge-form',
-    '[class*="captcha"]',
-    '[id*="captcha"]',
-    'iframe[src*="recaptcha"]',
-    'iframe[src*="hcaptcha"]'
-];
-
 function isCaptchaVisible() {
-    if (CAPTCHA_SIGNALS.some(sel => document.querySelector(sel))) return true;
-    const bodyText = (document.body?.innerText || '').toLowerCase();
-    return bodyText.includes('verify you are human') || bodyText.includes('are you a robot');
+    return !!document.querySelector('.up-challenge-container');
+}
+
+let _captchaObserver = null;
+
+function startCaptchaWatch() {
+    if (_captchaObserver) return;
+    _captchaObserver = new MutationObserver(() => {
+        if (isCaptchaVisible() && AUTO.running) {
+            stopAutomation();
+            AUTO.captchaHit = true;
+        }
+    });
+    _captchaObserver.observe(document.body, { childList: true, subtree: true });
+}
+
+function stopCaptchaWatch() {
+    if (_captchaObserver) {
+        _captchaObserver.disconnect();
+        _captchaObserver = null;
+    }
 }
 
 // ──────────────────────────────────────────────────────────────
 // Automation state (in-memory only.  never auto-runs on load)
 // ──────────────────────────────────────────────────────────────
-const AUTO = { running: false, aborted: false };
+const AUTO = { running: false, aborted: false, captchaHit: false };
 
-function startAutomation() { AUTO.running = true; AUTO.aborted = false; }
-function stopAutomation()  { AUTO.running = false; AUTO.aborted = true; }
+function startAutomation() {
+    AUTO.running    = true;
+    AUTO.aborted    = false;
+    AUTO.captchaHit = false;
+    startCaptchaWatch();
+}
+
+function stopAutomation() {
+    AUTO.running = false;
+    AUTO.aborted = true;
+    stopCaptchaWatch();
+}
 
 async function safeDelay(min, max) {
-    if (AUTO.aborted) throw new Error('ABORTED');
+    if (AUTO.aborted) throw new Error(AUTO.captchaHit ? 'CAPTCHA' : 'ABORTED');
     if (isCaptchaVisible()) { stopAutomation(); throw new Error('CAPTCHA'); }
     await randomDelay(min, max);
-    if (AUTO.aborted) throw new Error('ABORTED');
+    if (AUTO.aborted) throw new Error(AUTO.captchaHit ? 'CAPTCHA' : 'ABORTED');
     if (isCaptchaVisible()) { stopAutomation(); throw new Error('CAPTCHA'); }
 }
 
@@ -107,36 +129,39 @@ async function pickDropdownOption(toggleSelector, value) {
 // ──────────────────────────────────────────────────────────────
 const SEL = {
     // ── Other Experiences ─────────────────────────────────────
-    otherExpAddBtn:       'button[aria-label="Add other experiences"]',
-    otherExpAddBtnAlt:    'button[aria-label="Add an experience"]',
-    otherExpTitleInput:   'input#other-experience-subject',
-    otherExpDescInput:    'textarea#other-experience-description',
-    otherExpSaveBtn:      '.air3-modal-footer button.air3-btn-primary',
+    otherExpAddBtn:        'button[aria-label="Add other experiences"]',
+    otherExpAddBtnAlt:     'button[aria-label="Add an experience"]',
+    otherExpTitleInput:    'input#other-experience-subject',
+    otherExpDescInput:     'textarea#other-experience-description',
+    otherExpSaveBtn:       '.air3-modal-footer button.air3-btn-primary',
 
-    otherExpItems:        null,  // TODO: wrapper element per entry
-    otherExpDeleteBtn:    null,  // TODO: delete button per entry
-    otherExpConfirmDelete:null,  // TODO: confirm button on delete modal
+    otherExpItems:         null,  // TODO: need count selector — share parent container HTML
+    // aria-label: "Delete <title> Experience item"
+    otherExpDeleteBtn:     'button[aria-label*="Delete"][aria-label$="Experience item"]',
+    // confirm modal: same .air3-modal-footer pattern, wait for it async
+    otherExpConfirmDelete: '.air3-modal-footer button.air3-btn-primary',
 
     // ── Employment History ─────────────────────────────────────
-    employmentAddBtn:     'button[aria-label="Add employment history"]',
+    employmentAddBtn:      'button[aria-label="Add employment history"]',
     employmentCompanyInput:'input.air3-typeahead-input-main',
-    employmentCityInput:  'input#city',
+    employmentCityInput:   'input#city',
     employmentCountryInput:'input[aria-labelledby="countryLabel"]',
-    employmentTitleInput: 'input[aria-labelledby="jobTitleLabel"]',
-    employmentMonthToggle:'#startMonth [data-test="dropdown-toggle"]',
-    employmentYearToggle: '#startYear  [data-test="dropdown-toggle"]',
-    employmentDescInput:  'textarea#description',
-    employmentSaveBtn:    '.air3-modal-footer button.air3-btn-primary',
+    employmentTitleInput:  'input[aria-labelledby="jobTitleLabel"]',
+    employmentMonthToggle: '#startMonth [data-test="dropdown-toggle"]',
+    employmentYearToggle:  '#startYear  [data-test="dropdown-toggle"]',
+    employmentDescInput:   'textarea#description',
+    employmentSaveBtn:     '.air3-modal-footer button.air3-btn-primary',
 
-    employmentItems:      null,  // TODO: wrapper element per entry
-    employmentDeleteBtn:  'button[aria-label*="Delete"][aria-label*="Employment history item"]',
-    employmentConfirmDelete: null,  // TODO: confirm button on delete modal
-    employmentEditBtn:    'button[aria-label*="Edit"][aria-label*="Employment history item"]',
+    employmentItems:       null,  // TODO: need count selector — share parent container HTML
+    // aria-label: "Delete <title> Employment history item"
+    employmentDeleteBtn:   'button[aria-label*="Delete"][aria-label$="Employment history item"]',
+    // confirm modal: .air3-btn-row-right button.air3-btn-primary, wait for it async
+    employmentConfirmDelete: '.air3-btn-row-right button.air3-btn-primary',
+    employmentEditBtn:     'button[aria-label*="Edit"][aria-label*="Employment history item"]',
 };
 
 // ──────────────────────────────────────────────────────────────
 // Build the full Other Experience description and enforce 4000-char limit
-// Fix #1: merge description + loose1000 then truncate to 3999 chars
 // ──────────────────────────────────────────────────────────────
 const OTHER_EXP_TOTAL_LIMIT = 3999;
 
@@ -145,10 +170,7 @@ function buildOtherExpDescription(description, loose1000) {
         ? `${description}\n\n\n${loose1000.trim()}`
         : description;
 
-    if (base.length > OTHER_EXP_TOTAL_LIMIT) {
-        return base.substring(0, OTHER_EXP_TOTAL_LIMIT);
-    }
-    return base;
+    return base.length > OTHER_EXP_TOTAL_LIMIT ? base.substring(0, OTHER_EXP_TOTAL_LIMIT) : base;
 }
 
 // ──────────────────────────────────────────────────────────────
@@ -164,15 +186,15 @@ function splitLocation(locationStr) {
 }
 
 // ──────────────────────────────────────────────────────────────
-// Count existing entries
+// Count existing entries by reading the live Upwork DOM
 // ──────────────────────────────────────────────────────────────
 function countOtherExperiences() {
-    if (!SEL.otherExpItems) return 0;
+    if (!SEL.otherExpItems) return 0;  // selector not yet known
     return document.querySelectorAll(SEL.otherExpItems).length;
 }
 
 function countEmploymentEntries() {
-    if (!SEL.employmentItems) return 0;
+    if (!SEL.employmentItems) return 0;  // selector not yet known
     return document.querySelectorAll(SEL.employmentItems).length;
 }
 
@@ -182,42 +204,75 @@ function getOtherExpAddBtn() {
 }
 
 // ──────────────────────────────────────────────────────────────
-// Delete all other experiences
+// Delete one other experience entry (click delete → wait for modal → confirm)
 // ──────────────────────────────────────────────────────────────
-async function deleteAllOtherExperiences(notify) {
-    notify('Deleting existing other experience entries...', 'warning');
-    while (true) {
-        await safeDelay(600, 1200);
-        const btn = SEL.otherExpDeleteBtn ? document.querySelector(SEL.otherExpDeleteBtn) : null;
-        if (!btn) break;
-        await humanClick(btn);
-        await safeDelay(400, 800);
-        const confirmBtn = SEL.otherExpConfirmDelete ? document.querySelector(SEL.otherExpConfirmDelete) : null;
-        if (confirmBtn) { await humanClick(confirmBtn); await safeDelay(600, 1200); }
-    }
-    notify('Existing entries cleared.', 'warning');
+async function deleteOneOtherExperience(notify, index, total) {
+    const btn = document.querySelector(SEL.otherExpDeleteBtn);
+    if (!btn) return false;  // no more entries
+
+    await humanClick(btn);
+    await safeDelay(400, 800);
+
+    // Wait for the confirm modal to appear, then click Delete
+    const confirmBtn = await waitForEl(SEL.otherExpConfirmDelete);
+    await humanClick(confirmBtn);
+    await safeDelay(700, 1400);
+
+    notify(`Deleting other experience entries... ${index} deleted`, 'warning');
+    return true;
 }
 
 // ──────────────────────────────────────────────────────────────
-// Delete all employment history
+// Delete one employment entry (click delete → wait for modal → confirm)
+// ──────────────────────────────────────────────────────────────
+async function deleteOneEmploymentEntry(notify, index) {
+    const btn = document.querySelector(SEL.employmentDeleteBtn);
+    if (!btn) return false;  // no more entries
+
+    await humanClick(btn);
+    await safeDelay(400, 800);
+
+    // Wait for the confirm modal to appear, then click Delete
+    const confirmBtn = await waitForEl(SEL.employmentConfirmDelete);
+    await humanClick(confirmBtn);
+    await safeDelay(700, 1400);
+
+    notify(`Deleting employment entries... ${index} deleted`, 'warning');
+    return true;
+}
+
+// ──────────────────────────────────────────────────────────────
+// Delete all other experiences one by one
+// ──────────────────────────────────────────────────────────────
+async function deleteAllOtherExperiences(notify) {
+    notify('Deleting existing other experience entries...', 'warning');
+    let i = 1;
+    while (true) {
+        await safeDelay(600, 1000);
+        const more = await deleteOneOtherExperience(notify, i);
+        if (!more) break;
+        i++;
+    }
+    notify(`Cleared ${i - 1} other experience entries.`, 'warning');
+}
+
+// ──────────────────────────────────────────────────────────────
+// Delete all employment entries one by one
 // ──────────────────────────────────────────────────────────────
 async function deleteAllEmploymentEntries(notify) {
     notify('Deleting existing employment entries...', 'warning');
+    let i = 1;
     while (true) {
-        await safeDelay(600, 1200);
-        const btn = SEL.employmentDeleteBtn ? document.querySelector(SEL.employmentDeleteBtn) : null;
-        if (!btn) break;
-        await humanClick(btn);
-        await safeDelay(400, 800);
-        const confirmBtn = SEL.employmentConfirmDelete ? document.querySelector(SEL.employmentConfirmDelete) : null;
-        if (confirmBtn) { await humanClick(confirmBtn); await safeDelay(600, 1200); }
+        await safeDelay(600, 1000);
+        const more = await deleteOneEmploymentEntry(notify, i);
+        if (!more) break;
+        i++;
     }
-    notify('Existing entries cleared.', 'warning');
+    notify(`Cleared ${i - 1} employment entries.`, 'warning');
 }
 
 // ──────────────────────────────────────────────────────────────
 // Add single other experience entry
-// Fix #3: use humanPaste for description instead of humanType
 // ──────────────────────────────────────────────────────────────
 async function addOneOtherExperience(entry, loose1000) {
     const addBtn = getOtherExpAddBtn();
@@ -231,7 +286,7 @@ async function addOneOtherExperience(entry, loose1000) {
 
     const fullDescription = buildOtherExpDescription(entry.description, loose1000);
     const descInput = await waitForEl(SEL.otherExpDescInput);
-    await humanPaste(descInput, fullDescription);  // Fix #3: paste instead of type
+    await humanPaste(descInput, fullDescription);
     await safeDelay(400, 900);
 
     const saveBtn = await waitForEl(SEL.otherExpSaveBtn);
@@ -281,10 +336,10 @@ async function addOneEmploymentEntry(entry) {
 }
 
 // ──────────────────────────────────────────────────────────────
-// Run: Other Experiences (with resume support)
-// Fix #8: truncation is applied at build time so resume path is safe
+// Run: Other Experiences
+// shouldDelete: boolean decided by the user via confirm() in main.js
 // ──────────────────────────────────────────────────────────────
-async function runOtherExperiences(parsedData, notify, onDone, resumeFromIndex = 0) {
+async function runOtherExperiences(parsedData, notify, onDone, resumeFromIndex = 0, shouldDelete = false) {
     if (!parsedData.otherExp.length) {
         notify('No other experience entries found in parsed data.', 'error');
         return;
@@ -292,19 +347,16 @@ async function runOtherExperiences(parsedData, notify, onDone, resumeFromIndex =
 
     const loose1000 = parsedData.loose1000 || '';
     if (!loose1000.trim()) {
-        notify('Warning: No Loose 1000 keywords found. descriptions will be saved without keyword block.', 'warning');
+        notify('Warning: No Loose 1000 keywords found. Descriptions will be saved without keyword block.', 'warning');
     }
 
     startAutomation();
 
     try {
-        if (resumeFromIndex === 0) {
-            const existing = countOtherExperiences();
-            if (existing >= 100) {
-                await deleteAllOtherExperiences(notify);
-                await safeDelay(800, 1500);
-            }
-        } else {
+        if (resumeFromIndex === 0 && shouldDelete) {
+            await deleteAllOtherExperiences(notify);
+            await safeDelay(800, 1500);
+        } else if (resumeFromIndex > 0) {
             notify(`Resuming from entry ${resumeFromIndex + 1}...`, 'warning');
         }
 
@@ -318,20 +370,22 @@ async function runOtherExperiences(parsedData, notify, onDone, resumeFromIndex =
         }
 
         await clearJobState();
-        notify(`✅ Done.  ${total} other experience entries added.`, 'success');
+        notify(`✅ Done. ${total} other experience entries added.`, 'success');
 
     } catch (e) {
         handleAutomationError(e, notify);
     } finally {
         AUTO.running = false;
+        stopCaptchaWatch();
         if (onDone) onDone();
     }
 }
 
 // ──────────────────────────────────────────────────────────────
-// Run: Employment History (with resume support)
+// Run: Employment History
+// shouldDelete: boolean decided by the user via confirm() in main.js
 // ──────────────────────────────────────────────────────────────
-async function runEmploymentHistory(parsedData, notify, onDone, resumeFromIndex = 0) {
+async function runEmploymentHistory(parsedData, notify, onDone, resumeFromIndex = 0, shouldDelete = false) {
     if (!parsedData.employment.length) {
         notify('No employment entries found in parsed data.', 'error');
         return;
@@ -340,13 +394,10 @@ async function runEmploymentHistory(parsedData, notify, onDone, resumeFromIndex 
     startAutomation();
 
     try {
-        if (resumeFromIndex === 0) {
-            const existing = countEmploymentEntries();
-            if (existing >= 10) {
-                await deleteAllEmploymentEntries(notify);
-                await safeDelay(800, 1500);
-            }
-        } else {
+        if (resumeFromIndex === 0 && shouldDelete) {
+            await deleteAllEmploymentEntries(notify);
+            await safeDelay(800, 1500);
+        } else if (resumeFromIndex > 0) {
             notify(`Resuming from entry ${resumeFromIndex + 1}...`, 'warning');
         }
 
@@ -360,12 +411,13 @@ async function runEmploymentHistory(parsedData, notify, onDone, resumeFromIndex 
         }
 
         await clearJobState();
-        notify(`✅ Done.  ${total} employment entries added.`, 'success');
+        notify(`✅ Done. ${total} employment entries added.`, 'success');
 
     } catch (e) {
         handleAutomationError(e, notify);
     } finally {
         AUTO.running = false;
+        stopCaptchaWatch();
         if (onDone) onDone();
     }
 }
@@ -373,17 +425,17 @@ async function runEmploymentHistory(parsedData, notify, onDone, resumeFromIndex 
 // ──────────────────────────────────────────────────────────────
 // Check for a saved job
 // ──────────────────────────────────────────────────────────────
-async function checkForSavedJob()  { return await loadJobState(); }
-async function discardSavedJob()   { await clearJobState(); }
+async function checkForSavedJob() { return await loadJobState(); }
+async function discardSavedJob()  { await clearJobState(); }
 
 // ──────────────────────────────────────────────────────────────
 // Error handler
 // ──────────────────────────────────────────────────────────────
 function handleAutomationError(e, notify) {
     if (e.message === 'CAPTCHA') {
-        notify('⚠️ Upwork asked you to verify you are human. Automation paused. Complete the check, then click the run button again to resume.', 'error');
+        notify('⚠️ Upwork is asking you to verify you are human. Automation stopped and progress saved. Complete the challenge, then click the run button to resume.', 'error');
     } else if (e.message === 'ABORTED') {
-        // user clicked stop.  silent, already notified
+        // user clicked stop — silent, already notified
     } else {
         notify(`Error: ${e.message}`, 'error');
     }

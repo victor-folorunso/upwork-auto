@@ -159,7 +159,7 @@ function setupUI(shadow) {
         navigator.clipboard.writeText(AI_PROMPT).then(() => {
             n('✅ Prompt copied to clipboard. Paste it into your AI to get started.', 'success');
         }).catch(() => {
-            n('Copy failed.  please allow clipboard access.', 'error');
+            n('Copy failed. Please allow clipboard access.', 'error');
         });
     };
 
@@ -193,81 +193,115 @@ function setupUI(shadow) {
     shadow.querySelector('#act-run-other-exp').onclick = async () => {
         if (AUTO.running) { n('Automation is already running.', 'warning'); return; }
 
+        // ── Resume check ──
         const saved = await checkForSavedJob();
-
         if (saved && saved.type === 'other_exp') {
             const resume = confirm(
                 `A previous Other Experiences run was interrupted at entry ${saved.index + 1}.\n\n` +
                 `OK  → Resume from entry ${saved.index + 1}\n` +
                 `Cancel → Discard and start fresh`
             );
-
             if (resume) {
                 setRunningState(shadow, true);
                 runOtherExperiences(
                     { otherExp: saved.entries, employment: [], loose1000: saved.loose1000 || '' },
                     (text, type) => n(text, type),
                     () => setRunningState(shadow, false),
-                    saved.index
+                    saved.index,
+                    false  // resuming — no delete
                 );
                 return;
             }
-
             await discardSavedJob();
         }
 
         if (!parsedData) { n('Parse the output first.', 'error'); return; }
+
+        // ── Existing entries check ──
+        let shouldDelete = false;
+        const existingCount = countOtherExperiences();
+        if (existingCount > 0) {
+            shouldDelete = confirm(
+                `There are ${existingCount} existing Other Experience entries on your profile.\n\n` +
+                `OK  → Delete all ${existingCount} entries, then add new ones\n` +
+                `Cancel → Keep existing entries and just add new ones`
+            );
+        }
+
         setRunningState(shadow, true);
-        runOtherExperiences(parsedData, (text, type) => n(text, type), () => setRunningState(shadow, false));
+        runOtherExperiences(
+            parsedData,
+            (text, type) => n(text, type),
+            () => setRunningState(shadow, false),
+            0,
+            shouldDelete
+        );
     };
 
     // ── Run Employment History ──
     shadow.querySelector('#act-run-employment').onclick = async () => {
         if (AUTO.running) { n('Automation is already running.', 'warning'); return; }
 
+        // ── Resume check ──
         const saved = await checkForSavedJob();
-
         if (saved && saved.type === 'employment') {
             const resume = confirm(
                 `A previous Employment run was interrupted at entry ${saved.index + 1}.\n\n` +
                 `OK  → Resume from entry ${saved.index + 1}\n` +
                 `Cancel → Discard and start fresh`
             );
-
             if (resume) {
                 setRunningState(shadow, true);
                 runEmploymentHistory(
                     { employment: saved.entries, otherExp: [] },
                     (text, type) => n(text, type),
                     () => setRunningState(shadow, false),
-                    saved.index
+                    saved.index,
+                    false  // resuming — no delete
                 );
                 return;
             }
-
             await discardSavedJob();
         }
 
         if (!parsedData) { n('Parse the output first.', 'error'); return; }
+
+        // ── Existing entries check ──
+        let shouldDelete = false;
+        const existingCount = countEmploymentEntries();
+        if (existingCount > 0) {
+            shouldDelete = confirm(
+                `There are ${existingCount} existing Employment History entries on your profile.\n\n` +
+                `OK  → Delete all ${existingCount} entries, then add new ones\n` +
+                `Cancel → Keep existing entries and just add new ones`
+            );
+        }
+
         setRunningState(shadow, true);
-        runEmploymentHistory(parsedData, (text, type) => n(text, type), () => setRunningState(shadow, false));
+        runEmploymentHistory(
+            parsedData,
+            (text, type) => n(text, type),
+            () => setRunningState(shadow, false),
+            0,
+            shouldDelete
+        );
     };
 
     // Stop
     shadow.querySelector('#act-stop').onclick = () => {
         stopAutomation();
-        n('Automation stopped. Progress saved.  click the run button to resume.', 'warning');
+        n('Automation stopped. Progress saved. Click the run button to resume.', 'warning');
         setRunningState(shadow, false);
     };
 }
 
-// Fix #7: disable run buttons while running so they can't be double-triggered
+// Disable/enable run buttons while automation is active
 function setRunningState(shadow, running) {
     shadow.querySelector('#watch-note').style.display = running ? 'block' : 'none';
     shadow.querySelector('#act-stop').style.display   = running ? 'block' : 'none';
 
-    const runOtherExp  = shadow.querySelector('#act-run-other-exp');
-    const runEmploy    = shadow.querySelector('#act-run-employment');
+    const runOtherExp = shadow.querySelector('#act-run-other-exp');
+    const runEmploy   = shadow.querySelector('#act-run-employment');
 
     runOtherExp.disabled = running;
     runEmploy.disabled   = running;
