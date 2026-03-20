@@ -1,6 +1,6 @@
 <!-- overlay-dashboard.html -->
-<!-- Centered overlay with close button. -->
-<div class="wz-overlay-backdrop" id="dashboard-backdrop">
+<!-- Starts hidden. Opened by clicking ⚙️ in the main sidebar. -->
+<div class="wz-overlay-backdrop" id="dashboard-backdrop" style="display:none">
   <div class="wz-overlay-card wz-overlay-card--wide" id="dashboard-card">
 
     <div class="wz-overlay-header">
@@ -49,13 +49,11 @@
           <div class="sub-status-detail" id="sub-status-detail"></div>
         </div>
 
-        <!-- Upgrade section — shown when trial or expired -->
         <div id="sub-upgrade-section" style="display:none">
           <div class="sub-price-row">
             <span class="sub-price">₦1,000</span>
             <span class="sub-price-period">/ month</span>
           </div>
-
           <label class="section-label" style="margin-top:10px">Coupon code (optional)</label>
           <div class="pw-row">
             <input type="text" id="sub-coupon" class="pw-input" placeholder="e.g. MAVERIC50"
@@ -63,14 +61,12 @@
             <button class="btn-main pw-apply-btn" id="sub-apply-coupon">Apply</button>
           </div>
           <div id="sub-coupon-msg" class="pw-msg" style="display:none"></div>
-
           <div class="btn-stack" style="margin-top:12px">
             <button class="btn-main full-width" id="sub-pay-btn">Pay with Flutterwave</button>
           </div>
           <div class="pw-hint">Payment opens in a new tab. Come back here after paying — your status updates automatically within a minute.</div>
         </div>
 
-        <!-- Renewal note — shown when active -->
         <div id="sub-renew-section" style="display:none">
           <div class="btn-stack" style="margin-top:12px">
             <button class="btn-main full-width" id="sub-renew-btn">Renew Subscription</button>

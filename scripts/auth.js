@@ -12,9 +12,6 @@ const WIZARD_CONFIG = {
     trialDays:          30,
 };
 
-NEXT_PUBLIC_SUPABASE_URL=
-NEXT_PUBLIC_SUPABASE_PUBLISHABLE_DEFAULT_KEY=sb_publishable_11WzNWVH9IB3pJbRnkWegA_GfNzimCL
-
 // ── Supabase client ───────────────────────────────────────────
 // supabase-js is loaded as a content script (see manifest.json)
 const _supabase = supabase.createClient(
