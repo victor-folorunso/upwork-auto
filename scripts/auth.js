@@ -8,7 +8,6 @@ const WIZARD_CONFIG = {
     webhookEndpoint:   'https://bszdgbpftqdmlnpqqzmq.supabase.co/functions/v1/flutterwave-webhook',
     verifyEndpoint:    'https://bszdgbpftqdmlnpqqzmq.supabase.co/functions/v1/verify-payment',
     initiateEndpoint:  'https://bszdgbpftqdmlnpqqzmq.supabase.co/functions/v1/initiate-payment',
-    trialDays:         30,
 };
 
 // ── Supabase client ───────────────────────────────────────────
@@ -129,8 +128,7 @@ async function wizardUpdatePassword(newPassword) {
 }
 
 // ── Get current session (with auto-refresh) ──────────────────
-// Always refreshes the token if it expires within the next 5 minutes.
-// Called before every Edge Function request to ensure the token is fresh.
+// Refreshes token if it expires within the next 5 minutes.
 async function getSession() {
     const { data: { session } } = await _supabase.auth.getSession();
     if (!session) return null;
@@ -186,31 +184,21 @@ async function verifyDevice(userId, profile) {
 async function removeDevice(userId) {
     await _supabase.from('user_profiles').update({ device: null }).eq('id', userId);
     await clearStatusCache();
-    // Sign out globally — invalidates session on ALL devices so the
-    // other device gets booted immediately rather than looping on mismatch
+    // Sign out globally — boots the other device immediately
     await _supabase.auth.signOut({ scope: 'global' });
 }
 
 // ── Subscription check ────────────────────────────────────────
+// Only two statuses: 'active' (paid) or 'expired' (must pay).
 function evalSubscription(profile) {
     const { subscription_status, subscription_expires_at } = profile;
-
-    if (subscription_status === 'free') return { allowed: true, status: 'free' };
 
     if (subscription_status === 'active') {
         const expires = new Date(subscription_expires_at);
         if (expires > new Date()) {
             return { allowed: true, status: 'active', daysLeft: Math.ceil((expires - Date.now()) / 86400000) };
         }
-        _supabase.from('user_profiles').update({ subscription_status: 'expired' }).eq('id', profile.id);
-        return { allowed: false, status: 'expired' };
-    }
-
-    if (subscription_status === 'trial') {
-        const expires = new Date(subscription_expires_at);
-        if (expires > new Date()) {
-            return { allowed: true, status: 'trial', daysLeft: Math.ceil((expires - Date.now()) / 86400000) };
-        }
+        // Expired — update DB silently
         _supabase.from('user_profiles').update({ subscription_status: 'expired' }).eq('id', profile.id);
         return { allowed: false, status: 'expired' };
     }
@@ -339,7 +327,7 @@ function buildTxRef(userId, coupon) {
 
 // ── Initiate payment — creates Flutterwave hosted checkout link ──
 async function initiatePayment(userId, email, coupon) {
-    const amount = (coupon === 'MAVERIC50') ? 500 : 1000;
+    const amount = couponAmount(coupon);
     const txRef  = buildTxRef(userId, coupon);
 
     const session = await getSession();
@@ -362,7 +350,20 @@ async function initiatePayment(userId, email, coupon) {
     }
 }
 
-// ── Free coupon redemption (MAVERIC100) ──────────────────────
+// ── Compute discounted amount from coupon code ────────────────
+function couponAmount(coupon) {
+    if (!coupon) return 1000;
+    switch (coupon.toUpperCase()) {
+        case 'MAVERIC50':  return 500;
+        case 'MAVERIC75':  return 250;
+        case 'MAVERIC90':  return 100;
+        case 'MAVERIC100': return 0;
+        default:           return 1000;
+    }
+}
+
+// ── Free coupon redemption (100% off — gives 30 days active) ──
+// Used when couponAmount() returns 0 — no Flutterwave needed.
 async function redeemFreeCoupon(userId, coupon) {
     const session = await getSession();
     if (!session) return { ok: false, error: 'NO_SESSION' };
@@ -421,8 +422,7 @@ async function pollPayment(txRef, onTick) {
                 return { ok: true };
             }
 
-            // Auth errors are retried on the next loop (getSession refreshes)
-            // Only exit early on hard non-retryable errors
+            // Auth errors are retried — getSession() will refresh the token
             if (data.error && data.error !== 'INVALID_AUTH' && data.error !== 'NO_SESSION') {
                 return { ok: false, error: data.error };
             }
@@ -436,4 +436,13 @@ async function pollPayment(txRef, onTick) {
     }
 
     return { ok: false, error: 'TIMEOUT' };
+}
+
+// ── Send message (contact form) ───────────────────────────────
+async function sendMessage(userId, email, body) {
+    const { error } = await _supabase
+        .from('messages')
+        .insert({ user_id: userId, email, body });
+    if (error) return { ok: false, error: error.message };
+    return { ok: true };
 }

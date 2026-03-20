@@ -4,16 +4,11 @@
 // Uses the Flutterwave secret key server-side — never exposed to the client.
 //
 // Request body: { tx_ref: string }
-// Authorization header: Bearer <supabase_jwt>  (user must be logged in)
-//
-// Responses:
-//   { ok: true }                        — payment confirmed, subscription activated
-//   { ok: false, status: 'pending' }    — not paid yet, keep polling
-//   { ok: false, status: 'duplicate' }  — already processed
-//   { error: string }                   — something went wrong
+// Authorization header: Bearer <supabase_jwt>
 //
 // NOTE: coupon counter increments are handled exclusively by the
 // flutterwave-webhook function to prevent double-counting.
+// This function only reads the coupon id (no redeem_coupon call).
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
@@ -30,7 +25,6 @@ const CORS = {
 serve(async (req) => {
     if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
 
-    // ── Verify the user's JWT ─────────────────────────────────
     const authHeader = req.headers.get("Authorization");
     if (!authHeader) return json({ error: "MISSING_AUTH" }, 401);
 
@@ -41,21 +35,18 @@ serve(async (req) => {
     const { data: { user }, error: authError } = await userClient.auth.getUser();
     if (authError || !user) return json({ error: "INVALID_AUTH" }, 401);
 
-    // ── Parse request body ────────────────────────────────────
     const body = await req.json().catch(() => ({}));
     const { tx_ref } = body as { tx_ref?: string };
 
     if (!tx_ref) return json({ error: "MISSING_TX_REF" }, 400);
 
-    // Safety check — tx_ref must belong to the calling user
     // tx_ref format: wizard_<userId>_<timestamp>_<coupon_or_none>
-    const parts  = tx_ref.split("_");
-    const userId = parts[1];
-    if (userId !== user.id) return json({ error: "TX_REF_MISMATCH" }, 403);
+    const parts = tx_ref.split("_");
+    if (parts[1] !== user.id) return json({ error: "TX_REF_MISMATCH" }, 403);
 
-    // ── Idempotency — already processed? ─────────────────────
     const adminClient = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
 
+    // Idempotency — already processed?
     const { data: existing } = await adminClient
         .from("user_profiles")
         .select("flutterwave_ref")
@@ -66,14 +57,14 @@ serve(async (req) => {
         return json({ ok: true, status: "duplicate" });
     }
 
-    // ── Call Flutterwave verify API ───────────────────────────
+    // Call Flutterwave verify API
     let flwData: Record<string, unknown>;
     try {
         const flwRes = await fetch(
             `https://api.flutterwave.com/v3/transactions/verify_by_reference?tx_ref=${encodeURIComponent(tx_ref)}`,
             {
                 headers: {
-                    Authorization: `Bearer ${FLW_SECRET_KEY}`,
+                    Authorization:  `Bearer ${FLW_SECRET_KEY}`,
                     "Content-Type": "application/json",
                 },
             }
@@ -83,16 +74,15 @@ serve(async (req) => {
         return json({ error: "FLW_UNREACHABLE" }, 502);
     }
 
-    // ── Check payment status ──────────────────────────────────
     const status = (flwData?.data as Record<string, unknown>)?.status as string;
 
     if (flwData?.status !== "success" || status !== "successful") {
         return json({ ok: false, status: "pending" });
     }
 
-    // ── Payment confirmed — activate subscription ─────────────
-    // Coupon counter is NOT incremented here — the webhook handles that.
-    // We only look up the coupon ID to record it on the profile.
+    // Payment confirmed — activate subscription.
+    // Coupon counter NOT incremented here (webhook handles that).
+    // We only look up the coupon id to record it on the profile.
     const couponCode = parts[3] && parts[3] !== "none" ? parts[3] : null;
     let couponId: string | null = null;
 
@@ -105,7 +95,6 @@ serve(async (req) => {
         couponId = coupon?.id ?? null;
     }
 
-    // Extend 30 days from now (or from current expiry if still active)
     const { data: profile } = await adminClient
         .from("user_profiles")
         .select("subscription_expires_at, subscription_status")

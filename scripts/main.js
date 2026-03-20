@@ -98,7 +98,7 @@ function hideDashboardOverlay(shadow) {
 }
 
 // ──────────────────────────────────────────────────────────────
-// Auth card helpers (bottom-right, no backdrop)
+// Auth card helpers
 // ──────────────────────────────────────────────────────────────
 function showAuthCard(shadow, initialView, profile) {
     const card = shadow.querySelector('#auth-backdrop');
@@ -136,6 +136,46 @@ function hidePill(shadow) {
 }
 
 // ──────────────────────────────────────────────────────────────
+// Coupon UI helper — shared between upgrade and renew sections
+// ──────────────────────────────────────────────────────────────
+function applyCouponUI(code, msgEl, payBtn, defaultLabel) {
+    const discountMap = {
+        'MAVERIC50':  { label: 'Pay ₦500',              text: '50% off applied — pay ₦500.' },
+        'MAVERIC75':  { label: 'Pay ₦250',              text: '75% off applied — pay ₦250.' },
+        'MAVERIC90':  { label: 'Pay ₦100',              text: '90% off applied — pay ₦100.' },
+        'MAVERIC100': { label: '🎉 Activate Free Month', text: '100% off — no payment needed!' },
+    };
+    const discount = discountMap[code];
+    if (discount) {
+        payBtn.textContent = discount.label;
+        msgEl.className = 'pw-msg success';
+        msgEl.textContent = discount.text;
+        return code;
+    } else {
+        payBtn.textContent = defaultLabel;
+        msgEl.className = 'pw-msg error';
+        msgEl.textContent = 'Invalid coupon code.';
+        return null;
+    }
+}
+
+// ── Human-readable error messages for coupon redemption ──────
+function couponErrText(code) {
+    const map = {
+        COUPON_EXHAUSTED:    'This coupon has reached its usage limit.',
+        COUPON_ALREADY_USED: 'You have already used this coupon.',
+        COUPON_INVALID:      'Invalid coupon code.',
+        NOT_FREE_COUPON:     'This coupon cannot be used here.',
+        MISSING_AUTH:        'Authentication required. Please refresh the page.',
+        INVALID_AUTH:        'Session expired. Please refresh the page.',
+        USER_MISMATCH:       'Authentication error. Please refresh the page.',
+        NO_SESSION:          'Session expired. Please refresh the page.',
+        NETWORK_ERROR:       'Network error. Try again.',
+    };
+    return map[code] ?? `Error: ${code}`;
+}
+
+// ──────────────────────────────────────────────────────────────
 // Auth overlay wiring — includes OTP flows
 // ──────────────────────────────────────────────────────────────
 function setupAuthOverlay(shadow, onSuccess) {
@@ -165,17 +205,9 @@ function setupAuthOverlay(shadow, onSuccess) {
         btn.textContent = loading ? 'Please wait...' : label;
     }
 
-    // ── Cancel / pill ──
-    shadow.querySelector('#auth-cancel-btn').onclick = () => {
-        hideAuthCard(shadow);
-        showPill(shadow);
-    };
-    shadow.querySelector('#wz-pill').onclick = () => {
-        hidePill(shadow);
-        showAuthCard(shadow, 'auth-view-signup', null);
-    };
+    shadow.querySelector('#auth-cancel-btn').onclick = () => { hideAuthCard(shadow); showPill(shadow); };
+    shadow.querySelector('#wz-pill').onclick = () => { hidePill(shadow); showAuthCard(shadow, 'auth-view-signup', null); };
 
-    // ── Nav links ──
     shadow.querySelector('#go-login').onclick             = e => { e.preventDefault(); clearMsg('su-msg'); showView('auth-view-login'); };
     shadow.querySelector('#go-signup').onclick            = e => { e.preventDefault(); clearMsg('li-msg'); showView('auth-view-signup'); };
     shadow.querySelector('#go-forgot').onclick            = e => { e.preventDefault(); clearMsg('li-msg'); showView('auth-view-forgot'); };
@@ -183,22 +215,17 @@ function setupAuthOverlay(shadow, onSuccess) {
     shadow.querySelector('#otp-back-signup').onclick      = e => { e.preventDefault(); showView('auth-view-signup'); };
     shadow.querySelector('#otp-back-reset').onclick       = e => { e.preventDefault(); showView('auth-view-forgot'); };
 
-    // ── Sign up → sends OTP ──
     shadow.querySelector('#su-btn').onclick = async () => {
         const email    = shadow.querySelector('#su-email').value.trim();
         const password = shadow.querySelector('#su-password').value;
         const confirm  = shadow.querySelector('#su-confirm').value;
-
         if (!email || !password) return msg('su-msg', 'Fill in all fields.', 'error');
         if (password.length < 8)  return msg('su-msg', 'Password must be at least 8 characters.', 'error');
         if (password !== confirm)  return msg('su-msg', 'Passwords do not match.', 'error');
-
         setLoading('su-btn', true, 'Create Account');
         const result = await wizardSignUp(email, password);
         setLoading('su-btn', false, 'Create Account');
-
         if (!result.ok) return msg('su-msg', result.error, 'error');
-
         _pendingEmail = email;
         shadow.querySelector('#otp-email-display').textContent = email;
         clearMsg('otp-signup-msg');
@@ -206,63 +233,45 @@ function setupAuthOverlay(shadow, onSuccess) {
         showView('auth-view-otp-signup');
     };
 
-    // ── OTP verify (signup) ──
     shadow.querySelector('#otp-signup-btn').onclick = async () => {
         const token = shadow.querySelector('#otp-signup-code').value.trim();
         if (token.length !== 6) return msg('otp-signup-msg', 'Enter the 6-digit code from your email.', 'error');
-
         setLoading('otp-signup-btn', true, 'Verify & Activate');
         const result = await wizardVerifySignupOtp(_pendingEmail, token);
         setLoading('otp-signup-btn', false, 'Verify & Activate');
-
         if (!result.ok) return msg('otp-signup-msg', result.error, 'error');
-
-        const gate = await wizardGate();
-        handleGate(shadow, gate, onSuccess);
+        handleGate(shadow, await wizardGate(), onSuccess);
     };
 
-    // Auto-submit when 6 digits entered
     shadow.querySelector('#otp-signup-code').oninput = (e) => {
         if (e.target.value.length === 6) shadow.querySelector('#otp-signup-btn').click();
     };
 
-    // ── Resend OTP ──
     shadow.querySelector('#otp-resend-btn').onclick = async (e) => {
         e.preventDefault();
         msg('otp-signup-msg', 'Resending...', 'warning');
-        const pw = shadow.querySelector('#su-password').value;
-        await wizardSignUp(_pendingEmail, pw);
+        await wizardSignUp(_pendingEmail, shadow.querySelector('#su-password').value);
         msg('otp-signup-msg', '✅ New code sent. Check your email.', 'success');
     };
 
-    // ── Log in ──
     shadow.querySelector('#li-btn').onclick = async () => {
         const email    = shadow.querySelector('#li-email').value.trim();
         const password = shadow.querySelector('#li-password').value;
-
         if (!email || !password) return msg('li-msg', 'Fill in all fields.', 'error');
-
         setLoading('li-btn', true, 'Log In');
         const result = await wizardSignIn(email, password);
         setLoading('li-btn', false, 'Log In');
-
         if (!result.ok) return msg('li-msg', result.error, 'error');
-
-        const gate = await wizardGate();
-        handleGate(shadow, gate, onSuccess);
+        handleGate(shadow, await wizardGate(), onSuccess);
     };
 
-    // ── Forgot password → sends OTP ──
     shadow.querySelector('#fp-btn').onclick = async () => {
         const email = shadow.querySelector('#fp-email').value.trim();
         if (!email) return msg('fp-msg', 'Enter your email.', 'error');
-
         setLoading('fp-btn', true, 'Send Reset Code');
         const result = await wizardForgotPassword(email);
         setLoading('fp-btn', false, 'Send Reset Code');
-
         if (!result.ok) return msg('fp-msg', result.error, 'error');
-
         _pendingEmail = email;
         clearMsg('otp-reset-msg');
         shadow.querySelector('#otp-reset-code').value = '';
@@ -270,35 +279,21 @@ function setupAuthOverlay(shadow, onSuccess) {
         showView('auth-view-otp-reset');
     };
 
-    // ── OTP verify + new password (reset) ──
     shadow.querySelector('#otp-reset-btn').onclick = async () => {
         const token    = shadow.querySelector('#otp-reset-code').value.trim();
         const password = shadow.querySelector('#otp-reset-password').value;
-
-        if (token.length !== 6)   return msg('otp-reset-msg', 'Enter the 6-digit code from your email.', 'error');
-        if (password.length < 8)  return msg('otp-reset-msg', 'New password must be at least 8 characters.', 'error');
-
+        if (token.length !== 6)  return msg('otp-reset-msg', 'Enter the 6-digit code from your email.', 'error');
+        if (password.length < 8) return msg('otp-reset-msg', 'New password must be at least 8 characters.', 'error');
         setLoading('otp-reset-btn', true, 'Set New Password');
-
         const verify = await wizardVerifyRecoveryOtp(_pendingEmail, token);
-        if (!verify.ok) {
-            setLoading('otp-reset-btn', false, 'Set New Password');
-            return msg('otp-reset-msg', verify.error, 'error');
-        }
-
+        if (!verify.ok) { setLoading('otp-reset-btn', false, 'Set New Password'); return msg('otp-reset-msg', verify.error, 'error'); }
         const update = await wizardUpdatePassword(password);
         setLoading('otp-reset-btn', false, 'Set New Password');
-
         if (!update.ok) return msg('otp-reset-msg', update.error, 'error');
-
         msg('otp-reset-msg', '✅ Password updated! Logging you in...', 'success');
-        setTimeout(async () => {
-            const gate = await wizardGate();
-            handleGate(shadow, gate, onSuccess);
-        }, 1200);
+        setTimeout(async () => handleGate(shadow, await wizardGate(), onSuccess), 1200);
     };
 
-    // ── Device mismatch ──
     shadow.querySelector('#device-switch-btn').onclick = async () => {
         const session = await getSession();
         if (!session) return;
@@ -331,6 +326,7 @@ function setupDashboardOverlay(shadow, profile, subscription) {
         };
     });
 
+    // ── Prompt tab ──
     const customPromptEl = shadow.querySelector('#dash-custom-prompt');
     const lockedFormatEl = shadow.querySelector('#dash-locked-format');
     customPromptEl.value       = profile.custom_prompt || DEFAULT_CUSTOM_PROMPT;
@@ -361,74 +357,62 @@ function setupDashboardOverlay(shadow, profile, subscription) {
         el.textContent = result.ok ? '✅ Reset to default and saved.' : result.error;
     };
 
+    // ── Subscription tab ──
     const statusMap = {
-        trial:   { icon: '🕐', label: 'Free Trial',   detail: `${subscription.daysLeft ?? 0} days remaining` },
-        active:  { icon: '✅', label: 'Active',        detail: `Renews in ${subscription.daysLeft ?? 0} days` },
-        free:    { icon: '🎁', label: 'Free (Coupon)', detail: 'Lifetime access — no payment needed' },
-        expired: { icon: '🔒', label: 'Expired',       detail: 'Subscribe to continue using the wizard' },
+        active:  { icon: '✅', label: 'Active',  detail: `Renews in ${subscription.daysLeft ?? 0} days` },
+        expired: { icon: '🔒', label: 'Expired', detail: 'Subscribe to continue using the wizard' },
     };
     const s = statusMap[subscription.status] || statusMap.expired;
     shadow.querySelector('#sub-status-icon').textContent   = s.icon;
     shadow.querySelector('#sub-status-label').textContent  = s.label;
     shadow.querySelector('#sub-status-detail').textContent = s.detail;
 
-    shadow.querySelector('#sub-upgrade-section').style.display =
-        (subscription.status === 'trial' || subscription.status === 'expired') ? 'block' : 'none';
-    shadow.querySelector('#sub-renew-section').style.display =
-        subscription.status === 'active' ? 'block' : 'none';
+    const isExpired = subscription.status === 'expired';
+    shadow.querySelector('#sub-upgrade-section').style.display = isExpired ? 'block' : 'none';
+    shadow.querySelector('#sub-renew-section').style.display   = isExpired ? 'none'  : 'block';
 
-    let appliedCoupon = null;
-
+    // Upgrade section coupon
+    let upgradeAppliedCoupon = null;
     shadow.querySelector('#sub-apply-coupon').onclick = () => {
         const code  = shadow.querySelector('#sub-coupon').value.trim().toUpperCase();
         const msgEl = shadow.querySelector('#sub-coupon-msg');
         msgEl.style.display = 'block';
-        if (code === 'MAVERIC100') {
-            appliedCoupon = code;
-            shadow.querySelector('#sub-pay-btn').textContent = '🎉 Get Free Access';
-            msgEl.className = 'pw-msg success';
-            msgEl.textContent = '100% off — no payment needed!';
-        } else if (code === 'MAVERIC50') {
-            appliedCoupon = code;
-            shadow.querySelector('#sub-pay-btn').textContent = 'Pay ₦500';
-            msgEl.className = 'pw-msg success';
-            msgEl.textContent = '50% off applied — pay ₦500.';
-        } else {
-            appliedCoupon = null;
-            msgEl.className = 'pw-msg error';
-            msgEl.textContent = 'Invalid coupon code.';
-        }
+        upgradeAppliedCoupon = applyCouponUI(code, msgEl, shadow.querySelector('#sub-pay-btn'), 'Pay ₦1,000');
     };
 
-    async function handlePayClick(btnId, isRenew = false) {
-        const btn    = shadow.querySelector(`#${btnId}`);
-        const msgEl  = shadow.querySelector('#sub-coupon-msg');
+    // Renew section coupon
+    let renewAppliedCoupon = null;
+    shadow.querySelector('#sub-renew-apply-coupon').onclick = () => {
+        const code  = shadow.querySelector('#sub-renew-coupon').value.trim().toUpperCase();
+        const msgEl = shadow.querySelector('#sub-renew-coupon-msg');
+        msgEl.style.display = 'block';
+        renewAppliedCoupon = applyCouponUI(code, msgEl, shadow.querySelector('#sub-renew-btn'), 'Renew — Pay ₦1,000');
+    };
 
-        // ── Free coupon (MAVERIC100) — no payment needed ──────
-        if (!isRenew && appliedCoupon === 'MAVERIC100') {
+    async function handlePayClick(btnId, msgElId, getCoupon, defaultLabel) {
+        const btn           = shadow.querySelector(`#${btnId}`);
+        const msgEl         = shadow.querySelector(`#${msgElId}`);
+        const appliedCoupon = getCoupon();
+
+        // ── 100% off — no Flutterwave needed ──
+        if (appliedCoupon === 'MAVERIC100') {
             btn.disabled = true; btn.textContent = 'Processing...';
             const result = await redeemFreeCoupon(profile.id, 'MAVERIC100');
             btn.disabled = false;
             msgEl.style.display = 'block';
             if (result.ok) {
                 msgEl.className = 'pw-msg success';
-                msgEl.textContent = '✅ Free access activated! Reloading...';
+                msgEl.textContent = '✅ Month activated! Reloading...';
                 setTimeout(() => location.reload(), 1500);
             } else {
-                btn.textContent = '🎉 Get Free Access';
-                const errMap = {
-                    COUPON_EXHAUSTED:   'Coupon has reached its limit.',
-                    ALREADY_SUBSCRIBED: 'Already subscribed.',
-                    NETWORK_ERROR:      'Network error. Try again.',
-                    NO_SESSION:         'Session expired. Please refresh the page.',
-                };
+                btn.textContent = '🎉 Activate Free Month';
                 msgEl.className = 'pw-msg error';
-                msgEl.textContent = errMap[result.error] ?? 'Something went wrong.';
+                msgEl.textContent = couponErrText(result.error);
             }
             return;
         }
 
-        // ── Paid plan — open Flutterwave hosted checkout ────────
+        // ── Paid path — open Flutterwave hosted checkout ──
         btn.disabled = true;
         btn.textContent = 'Opening payment...';
         msgEl.style.display = 'block';
@@ -439,29 +423,27 @@ function setupDashboardOverlay(shadow, profile, subscription) {
 
         if (!initiated.ok) {
             btn.disabled = false;
-            btn.textContent = isRenew ? 'Renew Subscription' : 'Pay ₦1,000';
+            btn.textContent = defaultLabel;
             msgEl.className = 'pw-msg error';
             msgEl.textContent = `Could not create payment: ${initiated.error}`;
             return;
         }
 
-        // Open Flutterwave's hosted checkout in a new tab
         window.open(initiated.payment_link, '_blank');
-
         msgEl.className = 'pw-msg warning';
         msgEl.textContent = '⏳ Waiting for payment confirmation...';
 
-        const cancelBtn = shadow.querySelector('#sub-cancel-poll');
+        const cancelBtnSel = btnId === 'sub-pay-btn' ? '#sub-cancel-poll' : '#sub-cancel-poll-renew';
+        const cancelBtn = shadow.querySelector(cancelBtnSel);
         if (cancelBtn) cancelBtn.style.display = 'inline-block';
 
-        // Poll in background until confirmed
         const result = await pollPayment(initiated.txRef, (secs) => {
             msgEl.textContent = `⏳ Waiting for payment... (${secs}s)`;
         });
 
         if (cancelBtn) cancelBtn.style.display = 'none';
         btn.disabled = false;
-        btn.textContent = isRenew ? 'Renew Subscription' : 'Pay ₦1,000';
+        btn.textContent = defaultLabel;
 
         if (result.ok) {
             msgEl.className = 'pw-msg success';
@@ -479,10 +461,9 @@ function setupDashboardOverlay(shadow, profile, subscription) {
         }
     }
 
-    shadow.querySelector('#sub-pay-btn').onclick  = () => handlePayClick('sub-pay-btn');
-    shadow.querySelector('#sub-renew-btn').onclick = () => handlePayClick('sub-renew-btn', true);
+    shadow.querySelector('#sub-pay-btn').onclick   = () => handlePayClick('sub-pay-btn',  'sub-coupon-msg',       () => upgradeAppliedCoupon, 'Pay ₦1,000');
+    shadow.querySelector('#sub-renew-btn').onclick  = () => handlePayClick('sub-renew-btn', 'sub-renew-coupon-msg', () => renewAppliedCoupon,   'Renew — Pay ₦1,000');
 
-    // Cancel poll buttons
     shadow.querySelector('#sub-cancel-poll').onclick       = () => cancelPoll();
     shadow.querySelector('#sub-cancel-poll-renew').onclick = () => cancelPoll();
 
@@ -493,6 +474,7 @@ function setupDashboardOverlay(shadow, profile, subscription) {
         location.reload();
     };
 
+    // ── Account tab ──
     shadow.querySelector('#acct-email').textContent = profile.email;
     shadow.querySelector('#acct-since').textContent =
         profile.install_date ? new Date(profile.install_date).toLocaleDateString() : '—';
@@ -525,6 +507,35 @@ function setupDashboardOverlay(shadow, profile, subscription) {
         await wizardSignOut();
         location.reload();
     };
+
+    // ── Contact tab ──
+    shadow.querySelector('#contact-send-btn').onclick = async () => {
+        const btn    = shadow.querySelector('#contact-send-btn');
+        const msgEl  = shadow.querySelector('#contact-msg');
+        const bodyEl = shadow.querySelector('#contact-body');
+        const text   = bodyEl.value.trim();
+
+        if (text.length < 10) {
+            msgEl.style.display = 'block';
+            msgEl.className = 'pw-msg error';
+            msgEl.textContent = 'Message must be at least 10 characters.';
+            return;
+        }
+
+        btn.disabled = true; btn.textContent = 'Sending...';
+        const result = await sendMessage(profile.id, profile.email, text);
+        btn.disabled = false; btn.textContent = 'Send Message';
+
+        msgEl.style.display = 'block';
+        if (result.ok) {
+            msgEl.className = 'pw-msg success';
+            msgEl.textContent = "✅ Message sent. You'll hear back via email.";
+            bodyEl.value = '';
+        } else {
+            msgEl.className = 'pw-msg error';
+            msgEl.textContent = `Failed to send: ${result.error}`;
+        }
+    };
 }
 
 function openDashboard(shadow, profile, subscription) {
@@ -539,16 +550,6 @@ function openDashboard(shadow, profile, subscription) {
 function setupMainUI(shadow, profile, subscription) {
     let parsedData = null;
     const n = (text, type) => notify(shadow, text, type);
-
-    if (subscription.status === 'trial') {
-        shadow.querySelector('#trial-days-left').textContent = subscription.daysLeft ?? 0;
-        shadow.querySelector('#trial-note').style.display = 'block';
-        shadow.querySelector('#trial-upgrade-link').onclick = e => {
-            e.preventDefault();
-            openDashboard(shadow, profile, subscription);
-            setTimeout(() => shadow.querySelector('[data-tab="subscription"]').click(), 50);
-        };
-    }
 
     shadow.querySelector('#status-close').onclick = () => {
         shadow.querySelector('#status-box').style.display = 'none';
@@ -576,8 +577,8 @@ function setupMainUI(shadow, profile, subscription) {
         shadow.querySelector('#parse-summary').classList.add('visible');
         if (parsedData.errors.length) n(parsedData.errors, 'warning');
         else n('Output parsed successfully. Choose an action below.', 'success');
-        const hasData = parsedData.employment.length || parsedData.otherExp.length;
-        shadow.querySelector('#action-section').style.display = hasData ? 'block' : 'none';
+        shadow.querySelector('#action-section').style.display =
+            (parsedData.employment.length || parsedData.otherExp.length) ? 'block' : 'none';
     };
 
     shadow.querySelector('#act-run-other-exp').onclick = async () => {

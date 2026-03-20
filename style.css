@@ -21,9 +21,6 @@
   --warning-text: #f2f272;
   --error-bg:     #2d1a1a;
   --error-text:   #ff6b6b;
-  --trial-bg:     #0d1f3c;
-  --trial-text:   #6ab0f5;
-  --trial-border: #1a3a6a;
 }
 
 /* ═══════════════════════════════════════════════════════════
@@ -67,23 +64,6 @@
   flex-shrink: 0;
 }
 
-.trial-note {
-  background: var(--trial-bg);
-  color: var(--trial-text);
-  padding: 7px 14px;
-  font-size: 11px;
-  font-weight: 600;
-  text-align: center;
-  border-bottom: 1px solid var(--trial-border);
-}
-
-.trial-note a, .expired-note a {
-  color: inherit;
-  font-weight: 700;
-  text-decoration: underline;
-  cursor: pointer;
-}
-
 .expired-note {
   background: var(--error-bg);
   color: var(--error-text);
@@ -92,6 +72,13 @@
   font-weight: 600;
   text-align: center;
   border-bottom: 1px solid #4a2020;
+}
+
+.expired-note a {
+  color: inherit;
+  font-weight: 700;
+  text-decoration: underline;
+  cursor: pointer;
 }
 
 .watch-note {
@@ -341,7 +328,6 @@ button:active { opacity: .7;  }
   margin-top: 8px;
   font-size: 10px;
   color: var(--text-dim);
-  text-align: center;
   line-height: 1.5;
 }
 
@@ -521,85 +507,4 @@ button:active { opacity: .7;  }
   width: auto;
   padding: 5px 10px;
   font-size: 10px;
-}
-
-/* ═══════════════════════════════════════════════════════════
-   VIRTUAL ACCOUNT PAYMENT BOX
-═══════════════════════════════════════════════════════════ */
-
-.va-box {
-  background: var(--bg-card);
-  border: 1px solid var(--primary);
-  border-radius: 8px;
-  padding: 14px 16px;
-  margin-top: 12px;
-}
-
-.va-title {
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--text-dim);
-  margin-bottom: 10px;
-  text-align: center;
-}
-
-.va-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 0;
-  border-bottom: 1px solid var(--border);
-}
-
-.va-row:last-of-type { border-bottom: none; }
-
-.va-label {
-  font-size: 10px;
-  color: var(--text-dim);
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: .4px;
-  min-width: 80px;
-}
-
-.va-value {
-  font-size: 12px;
-  color: var(--text-main);
-  font-weight: 600;
-  flex: 1;
-}
-
-.va-account {
-  font-family: 'Fira Code', 'Courier New', monospace;
-  font-size: 15px;
-  letter-spacing: 2px;
-  color: var(--primary);
-}
-
-.va-amount {
-  font-size: 16px;
-  font-weight: 800;
-  color: var(--primary);
-}
-
-.va-expiry {
-  margin-top: 8px;
-  font-size: 10px;
-  color: var(--warning-text);
-  text-align: center;
-}
-
-.va-note {
-  font-size: 10px;
-  color: var(--text-dim);
-  text-align: center;
-  margin-top: 4px;
-}
-
-.va-poll-note {
-  font-size: 10px;
-  color: var(--text-dim);
-  text-align: center;
-  margin-top: 8px;
-  font-style: italic;
 }
