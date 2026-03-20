@@ -1,7 +1,7 @@
 // main.js — orchestrator: shadow DOM, UI wiring, auth gate, overlays
 
 const ROOT_ID    = 'upwork-wizard-root';
-const PANEL_WIDTH = '380px';
+const PANEL_WIDTH = 'min(380px, calc(100vw - 30px))';
 
 // ──────────────────────────────────────────────────────────────
 // Shadow DOM + asset loader
@@ -139,7 +139,6 @@ function hidePill(shadow) {
 // Auth overlay wiring — includes OTP flows
 // ──────────────────────────────────────────────────────────────
 function setupAuthOverlay(shadow, onSuccess) {
-    // Tracks email between signup → OTP and forgot → OTP steps
     let _pendingEmail = '';
 
     function showView(id) {
@@ -218,7 +217,6 @@ function setupAuthOverlay(shadow, onSuccess) {
 
         if (!result.ok) return msg('otp-signup-msg', result.error, 'error');
 
-        // Verified — run gate to show main UI
         const gate = await wizardGate();
         handleGate(shadow, gate, onSuccess);
     };
@@ -232,7 +230,6 @@ function setupAuthOverlay(shadow, onSuccess) {
     shadow.querySelector('#otp-resend-btn').onclick = async (e) => {
         e.preventDefault();
         msg('otp-signup-msg', 'Resending...', 'warning');
-        // Re-trigger signUp — Supabase will resend the OTP
         const pw = shadow.querySelector('#su-password').value;
         await wizardSignUp(_pendingEmail, pw);
         msg('otp-signup-msg', '✅ New code sent. Check your email.', 'success');
@@ -283,14 +280,12 @@ function setupAuthOverlay(shadow, onSuccess) {
 
         setLoading('otp-reset-btn', true, 'Set New Password');
 
-        // Step 1: verify OTP → establishes session
         const verify = await wizardVerifyRecoveryOtp(_pendingEmail, token);
         if (!verify.ok) {
             setLoading('otp-reset-btn', false, 'Set New Password');
             return msg('otp-reset-msg', verify.error, 'error');
         }
 
-        // Step 2: set new password
         const update = await wizardUpdatePassword(password);
         setLoading('otp-reset-btn', false, 'Set New Password');
 

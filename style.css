@@ -41,6 +41,7 @@
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  max-width: 100%;
 }
 
 .wiz-header {
@@ -254,6 +255,7 @@ button:active { opacity: .7;  }
   border-radius: 14px;
   box-shadow: 0 24px 60px rgba(0,0,0,.85);
   width: 420px;
+  max-width: 100%;  /* never overflow the host */
   max-height: 90vh;
   overflow-y: auto;
   display: flex;
@@ -277,6 +279,7 @@ button:active { opacity: .7;  }
   box-shadow: 0 4px 16px rgba(0,0,0,.5);
   transition: border-color .2s, color .2s;
   pointer-events: auto;
+  max-width: 100%;
 }
 .wz-pill:hover { border-color: var(--primary); color: var(--text-main); }
 
