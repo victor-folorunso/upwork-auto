@@ -47,14 +47,14 @@ function parseEmploymentEntries(blockContent, errors) {
 
         const missing = ['company', 'location', 'title', 'description'].filter(k => !entry[k]);
         if (missing.length) {
-            errors.push(`Employment entry ${i}: missing fields – ${missing.join(', ')}`);
+            errors.push(`Employment entry ${i}: missing fields: ${missing.join(', ')}`);
             continue;
         }
 
         entries.push({
-            company: entry['company'],
-            location: entry['location'],
-            title: entry['title'],
+            company:     entry['company'],
+            location:    entry['location'],
+            title:       entry['title'],
             description: entry['description']
         });
     }
@@ -80,18 +80,17 @@ function parseOtherExpEntries(blockContent, errors) {
         }
 
         if (entry['title'].length > 70) {
-            errors.push(`Other Exp entry ${i}: title too long (${entry['title'].length}/70) – trimmed`);
+            errors.push(`Other Exp entry ${i}: title too long (${entry['title'].length}/70), trimmed`);
             entry['title'] = entry['title'].substring(0, 70);
         }
 
-        // Fix #6: enforce 300-char description limit at parse time
         if (entry['description'].length > OTHER_EXP_DESC_LIMIT) {
-            errors.push(`Other Exp entry ${i}: description too long (${entry['description'].length}/${OTHER_EXP_DESC_LIMIT}) – trimmed`);
+            errors.push(`Other Exp entry ${i}: description too long (${entry['description'].length}/${OTHER_EXP_DESC_LIMIT}), trimmed`);
             entry['description'] = entry['description'].substring(0, OTHER_EXP_DESC_LIMIT);
         }
 
         entries.push({
-            title: entry['title'],
+            title:       entry['title'],
             description: entry['description']
         });
     }
@@ -106,7 +105,7 @@ function parseFieldLines(text) {
     for (const line of lines) {
         const sep = line.indexOf('::');
         if (sep === -1) continue;
-        const key = line.substring(0, sep).trim().toLowerCase();
+        const key   = line.substring(0, sep).trim().toLowerCase();
         const value = line.substring(sep + 2).trim();
         obj[key] = value;
     }

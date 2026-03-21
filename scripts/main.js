@@ -1,7 +1,13 @@
 // main.js — orchestrator: shadow DOM, UI wiring, auth gate, overlays
 
-const ROOT_ID    = 'upwork-wizard-root';
+const ROOT_ID     = 'upwork-wizard-root';
 const PANEL_WIDTH = 'min(380px, calc(100vw - 30px))';
+
+// Upwork shows 3 entries and hides the rest behind "Show more (N)".
+// Both sections cap at 97 hidden + 3 visible = 100 total.
+// The delete prompt only fires at 97+ (UPWORK_SECTION_LIMIT - 3).
+const UPWORK_SECTION_LIMIT      = 100;
+const UPWORK_SECTION_NEAR_FULL  = UPWORK_SECTION_LIMIT - 3;  // 97
 
 // ──────────────────────────────────────────────────────────────
 // Shadow DOM + asset loader
@@ -136,14 +142,14 @@ function hidePill(shadow) {
 }
 
 // ──────────────────────────────────────────────────────────────
-// Coupon UI helper — shared between upgrade and renew sections
+// Coupon UI helper
 // ──────────────────────────────────────────────────────────────
 function applyCouponUI(code, msgEl, payBtn, defaultLabel) {
     const discountMap = {
-        'MAVERIC50':  { label: 'Pay ₦500',              text: '50% off applied — pay ₦500.' },
-        'MAVERIC75':  { label: 'Pay ₦250',              text: '75% off applied — pay ₦250.' },
-        'MAVERIC90':  { label: 'Pay ₦100',              text: '90% off applied — pay ₦100.' },
-        'MAVERIC100': { label: '🎉 Activate Free Month', text: '100% off — no payment needed!' },
+        'MAVERIC50':  { label: 'Pay ₦500',              text: '50% off applied. Pay ₦500.' },
+        'MAVERIC75':  { label: 'Pay ₦250',              text: '75% off applied. Pay ₦250.' },
+        'MAVERIC90':  { label: 'Pay ₦100',              text: '90% off applied. Pay ₦100.' },
+        'MAVERIC100': { label: '🎉 Activate Free Month', text: '100% off. No payment needed!' },
     };
     const discount = discountMap[code];
     if (discount) {
@@ -159,7 +165,7 @@ function applyCouponUI(code, msgEl, payBtn, defaultLabel) {
     }
 }
 
-// ── Human-readable error messages for coupon redemption ──────
+// ── Human-readable coupon error messages ─────────────────────
 function couponErrText(code) {
     const map = {
         COUPON_EXHAUSTED:    'This coupon has reached its usage limit.',
@@ -371,7 +377,6 @@ function setupDashboardOverlay(shadow, profile, subscription) {
     shadow.querySelector('#sub-upgrade-section').style.display = isExpired ? 'block' : 'none';
     shadow.querySelector('#sub-renew-section').style.display   = isExpired ? 'none'  : 'block';
 
-    // Upgrade section coupon
     let upgradeAppliedCoupon = null;
     shadow.querySelector('#sub-apply-coupon').onclick = () => {
         const code  = shadow.querySelector('#sub-coupon').value.trim().toUpperCase();
@@ -380,13 +385,12 @@ function setupDashboardOverlay(shadow, profile, subscription) {
         upgradeAppliedCoupon = applyCouponUI(code, msgEl, shadow.querySelector('#sub-pay-btn'), 'Pay ₦1,000');
     };
 
-    // Renew section coupon
     let renewAppliedCoupon = null;
     shadow.querySelector('#sub-renew-apply-coupon').onclick = () => {
         const code  = shadow.querySelector('#sub-renew-coupon').value.trim().toUpperCase();
         const msgEl = shadow.querySelector('#sub-renew-coupon-msg');
         msgEl.style.display = 'block';
-        renewAppliedCoupon = applyCouponUI(code, msgEl, shadow.querySelector('#sub-renew-btn'), 'Renew — Pay ₦1,000');
+        renewAppliedCoupon = applyCouponUI(code, msgEl, shadow.querySelector('#sub-renew-btn'), 'Renew: Pay ₦1,000');
     };
 
     async function handlePayClick(btnId, msgElId, getCoupon, defaultLabel) {
@@ -394,7 +398,6 @@ function setupDashboardOverlay(shadow, profile, subscription) {
         const msgEl         = shadow.querySelector(`#${msgElId}`);
         const appliedCoupon = getCoupon();
 
-        // ── 100% off — no Flutterwave needed ──
         if (appliedCoupon === 'MAVERIC100') {
             btn.disabled = true; btn.textContent = 'Processing...';
             const result = await redeemFreeCoupon(profile.id, 'MAVERIC100');
@@ -412,7 +415,6 @@ function setupDashboardOverlay(shadow, profile, subscription) {
             return;
         }
 
-        // ── Paid path — open Flutterwave hosted checkout ──
         btn.disabled = true;
         btn.textContent = 'Opening payment...';
         msgEl.style.display = 'block';
@@ -451,10 +453,10 @@ function setupDashboardOverlay(shadow, profile, subscription) {
             setTimeout(() => location.reload(), 1200);
         } else if (result.error === 'CANCELLED') {
             msgEl.className = 'pw-msg warning';
-            msgEl.textContent = 'Stopped checking. Click ↻ Refresh status after you pay.';
+            msgEl.textContent = 'Stopped checking. Click Refresh status after you pay.';
         } else if (result.error === 'TIMEOUT') {
             msgEl.className = 'pw-msg warning';
-            msgEl.textContent = 'Timed out. Click ↻ Refresh status if you already paid.';
+            msgEl.textContent = 'Timed out. Click Refresh status if you already paid.';
         } else {
             msgEl.className = 'pw-msg error';
             msgEl.textContent = `Payment check failed: ${result.error}`;
@@ -462,7 +464,7 @@ function setupDashboardOverlay(shadow, profile, subscription) {
     }
 
     shadow.querySelector('#sub-pay-btn').onclick   = () => handlePayClick('sub-pay-btn',  'sub-coupon-msg',       () => upgradeAppliedCoupon, 'Pay ₦1,000');
-    shadow.querySelector('#sub-renew-btn').onclick  = () => handlePayClick('sub-renew-btn', 'sub-renew-coupon-msg', () => renewAppliedCoupon,   'Renew — Pay ₦1,000');
+    shadow.querySelector('#sub-renew-btn').onclick  = () => handlePayClick('sub-renew-btn', 'sub-renew-coupon-msg', () => renewAppliedCoupon,   'Renew: Pay ₦1,000');
 
     shadow.querySelector('#sub-cancel-poll').onclick       = () => cancelPoll();
     shadow.querySelector('#sub-cancel-poll-renew').onclick = () => cancelPoll();
@@ -477,7 +479,7 @@ function setupDashboardOverlay(shadow, profile, subscription) {
     // ── Account tab ──
     shadow.querySelector('#acct-email').textContent = profile.email;
     shadow.querySelector('#acct-since').textContent =
-        profile.install_date ? new Date(profile.install_date).toLocaleDateString() : '—';
+        profile.install_date ? new Date(profile.install_date).toLocaleDateString() : 'Unknown';
 
     const deviceInfo = shadow.querySelector('#acct-device-info');
     if (profile.device) {
@@ -583,9 +585,14 @@ function setupMainUI(shadow, profile, subscription) {
 
     shadow.querySelector('#act-run-other-exp').onclick = async () => {
         if (AUTO.running) { n('Automation is already running.', 'warning'); return; }
+
         const saved = await checkForSavedJob();
         if (saved && saved.type === 'other_exp') {
-            const resume = confirm(`A previous Other Experiences run was interrupted at entry ${saved.index + 1}.\n\nOK  → Resume from entry ${saved.index + 1}\nCancel → Discard and start fresh`);
+            const resume = confirm(
+                `A previous Other Experiences run was interrupted at entry ${saved.index + 1}.\n\n` +
+                `OK  → Resume from entry ${saved.index + 1}\n` +
+                `Cancel → Discard and start fresh`
+            );
             if (resume) {
                 setRunningState(shadow, true);
                 runOtherExperiences({ otherExp: saved.entries, employment: [], loose1000: saved.loose1000 || '' }, (t, tp) => n(t, tp), () => setRunningState(shadow, false), saved.index, false);
@@ -593,19 +600,46 @@ function setupMainUI(shadow, profile, subscription) {
             }
             await discardSavedJob();
         }
+
         if (!parsedData) { n('Parse the output first.', 'error'); return; }
-        let shouldDelete = false;
+
+        // Only prompt when the section is at or near Upwork's limit (97+).
+        // Below that, just run — no point interrupting the user.
         const ec = countOtherExperiences();
-        if (ec > 0) shouldDelete = confirm(`There are ${ec} existing Other Experience entries on your profile.\n\nOK  → Delete all ${ec} entries, then add new ones\nCancel → Keep existing entries and just add new ones`);
+        let shouldDelete = false;
+
+        if (ec >= UPWORK_SECTION_NEAR_FULL) {
+            const atLimit = ec >= UPWORK_SECTION_LIMIT;
+            const limitLine = atLimit
+                ? `⚠️ Your profile is at the limit of ${UPWORK_SECTION_LIMIT} entries. You must delete before adding new ones.`
+                : `⚠️ Your profile is nearly full (${ec}/${UPWORK_SECTION_LIMIT}). Adding more without deleting may hit the limit mid-run.`;
+
+            shouldDelete = confirm(
+                `${limitLine}\n\n` +
+                `OK  → Delete all ${ec} existing entries, then add new ones\n` +
+                `Cancel → Keep existing entries and just add new ones`
+            );
+
+            if (!shouldDelete && atLimit) {
+                n(`Profile is full (${ec}/${UPWORK_SECTION_LIMIT}). Delete existing entries first.`, 'error');
+                return;
+            }
+        }
+
         setRunningState(shadow, true);
         runOtherExperiences(parsedData, (t, tp) => n(t, tp), () => setRunningState(shadow, false), 0, shouldDelete);
     };
 
     shadow.querySelector('#act-run-employment').onclick = async () => {
         if (AUTO.running) { n('Automation is already running.', 'warning'); return; }
+
         const saved = await checkForSavedJob();
         if (saved && saved.type === 'employment') {
-            const resume = confirm(`A previous Employment run was interrupted at entry ${saved.index + 1}.\n\nOK  → Resume from entry ${saved.index + 1}\nCancel → Discard and start fresh`);
+            const resume = confirm(
+                `A previous Employment run was interrupted at entry ${saved.index + 1}.\n\n` +
+                `OK  → Resume from entry ${saved.index + 1}\n` +
+                `Cancel → Discard and start fresh`
+            );
             if (resume) {
                 setRunningState(shadow, true);
                 runEmploymentHistory({ employment: saved.entries, otherExp: [] }, (t, tp) => n(t, tp), () => setRunningState(shadow, false), saved.index, false);
@@ -613,10 +647,30 @@ function setupMainUI(shadow, profile, subscription) {
             }
             await discardSavedJob();
         }
+
         if (!parsedData) { n('Parse the output first.', 'error'); return; }
-        let shouldDelete = false;
+
         const ec = countEmploymentEntries();
-        if (ec > 0) shouldDelete = confirm(`There are ${ec} existing Employment History entries on your profile.\n\nOK  → Delete all ${ec} entries, then add new ones\nCancel → Keep existing entries and just add new ones`);
+        let shouldDelete = false;
+
+        if (ec >= UPWORK_SECTION_NEAR_FULL) {
+            const atLimit = ec >= UPWORK_SECTION_LIMIT;
+            const limitLine = atLimit
+                ? `⚠️ Your profile is at the limit of ${UPWORK_SECTION_LIMIT} entries. You must delete before adding new ones.`
+                : `⚠️ Your profile is nearly full (${ec}/${UPWORK_SECTION_LIMIT}). Adding more without deleting may hit the limit mid-run.`;
+
+            shouldDelete = confirm(
+                `${limitLine}\n\n` +
+                `OK  → Delete all ${ec} existing entries, then add new ones\n` +
+                `Cancel → Keep existing entries and just add new ones`
+            );
+
+            if (!shouldDelete && atLimit) {
+                n(`Profile is full (${ec}/${UPWORK_SECTION_LIMIT}). Delete existing entries first.`, 'error');
+                return;
+            }
+        }
+
         setRunningState(shadow, true);
         runEmploymentHistory(parsedData, (t, tp) => n(t, tp), () => setRunningState(shadow, false), 0, shouldDelete);
     };

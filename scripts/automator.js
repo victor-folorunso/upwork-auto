@@ -2,10 +2,6 @@
 
 // ──────────────────────────────────────────────────────────────
 // CAPTCHA detection
-// Monitors for Cloudflare Turnstile challenge which Upwork serves
-// as a full-page takeover with a unique .up-challenge-container wrapper.
-// A MutationObserver watches the DOM continuously while automation runs
-// so any mid-run CAPTCHA appearance is caught immediately.
 // ──────────────────────────────────────────────────────────────
 function isCaptchaVisible() {
     return !!document.querySelector('.up-challenge-container');
@@ -32,7 +28,7 @@ function stopCaptchaWatch() {
 }
 
 // ──────────────────────────────────────────────────────────────
-// Automation state (in-memory only.  never auto-runs on load)
+// Automation state
 // ──────────────────────────────────────────────────────────────
 const AUTO = { running: false, aborted: false, captchaHit: false };
 
@@ -92,7 +88,42 @@ function waitForEl(selector, timeout = 15000) {
     });
 }
 
-// Type into a typeahead-fake input and pick the first dropdown option if one appears.
+// Wait for the save to complete after clicking the save button.
+//
+// The problem with checking "is overlay gone?" immediately is a race:
+// the overlay may not have appeared yet, so we see "gone" and proceed
+// while it's actually about to appear. The correct sequence is:
+//   1. Wait for the overlay to APPEAR (proves the save started)
+//   2. Wait for the overlay to DISAPPEAR (proves the save finished)
+//
+// If the overlay never appears within 2 seconds the save was instant
+// and we move on. This covers both fast and slow network conditions.
+async function waitForSaveComplete() {
+    const OVERLAY_SEL = 'div[data-test="loader-overlay"].is-open';
+
+    // Step 1: wait for overlay to appear (max 2s, silent if it never shows)
+    await waitForEl(OVERLAY_SEL, 2000).catch(() => {});
+
+    // Step 2: wait for overlay to be gone
+    await new Promise((resolve, reject) => {
+        const isGone = () => !document.querySelector(OVERLAY_SEL);
+        if (isGone()) return resolve();
+
+        const observer = new MutationObserver(() => {
+            if (isGone()) { observer.disconnect(); resolve(); }
+        });
+
+        observer.observe(document.body, {
+            childList: true, subtree: true,
+            attributes: true, attributeFilter: ['class']
+        });
+        setTimeout(() => { observer.disconnect(); reject(new Error('Timeout waiting for save overlay to close')); }, 15000);
+    });
+
+    // Small buffer after overlay clears before interacting again
+    await randomDelay(400, 700);
+}
+
 async function typeAndPickFirst(input, text) {
     await humanType(input, text);
     await randomDelay(400, 800);
@@ -104,7 +135,6 @@ async function typeAndPickFirst(input, text) {
     }
 }
 
-// Click a custom air3-dropdown toggle and pick the option whose text matches value
 async function pickDropdownOption(toggleSelector, value) {
     const toggle = document.querySelector(toggleSelector);
     if (!toggle) return;
@@ -134,31 +164,54 @@ const SEL = {
     otherExpTitleInput:    'input#other-experience-subject',
     otherExpDescInput:     'textarea#other-experience-description',
     otherExpSaveBtn:       '.air3-modal-footer button.air3-btn-primary',
-
-    otherExpItems:         null,  // TODO: fill in once parent container HTML is known
-    // aria-label: "Delete <title> Experience item"
     otherExpDeleteBtn:     'button[aria-label*="Delete"][aria-label$="Experience item"]',
-    // confirm modal: same .air3-modal-footer pattern, wait for it async
     otherExpConfirmDelete: '.air3-modal-footer button.air3-btn-primary',
 
     // ── Employment History ─────────────────────────────────────
-    employmentAddBtn:      'button[aria-label="Add employment history"]',
-    employmentCompanyInput:'input.air3-typeahead-input-main',
-    employmentCityInput:   'input#city',
-    employmentCountryInput:'input[aria-labelledby="countryLabel"]',
-    employmentTitleInput:  'input[aria-labelledby="jobTitleLabel"]',
-    employmentMonthToggle: '#startMonth [data-test="dropdown-toggle"]',
-    employmentYearToggle:  '#startYear  [data-test="dropdown-toggle"]',
-    employmentDescInput:   'textarea#description',
-    employmentSaveBtn:     '.air3-modal-footer button.air3-btn-primary',
-
-    employmentItems:       null,  // TODO: fill in once parent container HTML is known
-    // aria-label: "Delete <title> Employment history item"
-    employmentDeleteBtn:   'button[aria-label*="Delete"][aria-label$="Employment history item"]',
-    // confirm modal: .air3-btn-row-right button.air3-btn-primary, wait for it async
-    employmentConfirmDelete: '.air3-btn-row-right button.air3-btn-primary',
-    employmentEditBtn:     'button[aria-label*="Edit"][aria-label*="Employment history item"]',
+    employmentAddBtn:       'button[aria-label="Add employment history"]',
+    employmentCompanyInput: 'input.air3-typeahead-input-main',
+    employmentCityInput:    'input#city',
+    employmentCountryInput: 'input[aria-labelledby="countryLabel"]',
+    employmentTitleInput:   'input[aria-labelledby="jobTitleLabel"]',
+    employmentMonthToggle:  '#startMonth [data-test="dropdown-toggle"]',
+    employmentYearToggle:   '#startYear  [data-test="dropdown-toggle"]',
+    employmentDescInput:    'textarea#description',
+    employmentSaveBtn:      '.air3-modal-footer button.air3-btn-primary',
+    employmentDeleteBtn:    'button[aria-label*="Delete"][aria-label$="Employment history item"]',
+    employmentConfirmDelete:'.air3-btn-row-right button.air3-btn-primary',
+    employmentEditBtn:      'button[aria-label*="Edit"][aria-label*="Employment history item"]',
 };
+
+// ──────────────────────────────────────────────────────────────
+// Count existing entries
+//
+// Both the span and the delete buttons are scoped to the section
+// wrapper to prevent cross-contamination between the two sections.
+// ──────────────────────────────────────────────────────────────
+function _countSection(addBtnSelector, deleteBtnSelector) {
+    const addBtn = document.querySelector(addBtnSelector);
+    if (!addBtn) return 0;
+
+    const wrapper = addBtn.closest('.air3-card-section');
+    if (!wrapper) return 0;
+
+    const span = wrapper.querySelector('span[data-testid="show-more-count"]');
+
+    const hiddenCount  = span
+        ? parseInt(span.textContent.trim().replace(/[()]/g, ''), 10) || 0
+        : 0;
+    const visibleCount = wrapper.querySelectorAll(deleteBtnSelector).length;
+
+    return hiddenCount + visibleCount;
+}
+
+function countOtherExperiences() {
+    return _countSection(SEL.otherExpAddBtn, SEL.otherExpDeleteBtn);
+}
+
+function countEmploymentEntries() {
+    return _countSection(SEL.employmentAddBtn, SEL.employmentDeleteBtn);
+}
 
 // ──────────────────────────────────────────────────────────────
 // Build the full Other Experience description and enforce 4000-char limit
@@ -180,22 +233,9 @@ function splitLocation(locationStr) {
     const idx = locationStr.lastIndexOf(',');
     if (idx === -1) return { city: locationStr.trim(), country: '' };
     return {
-        city: locationStr.substring(0, idx).trim(),
+        city:    locationStr.substring(0, idx).trim(),
         country: locationStr.substring(idx + 1).trim()
     };
-}
-
-// ──────────────────────────────────────────────────────────────
-// Count existing entries by reading the live Upwork DOM
-// ──────────────────────────────────────────────────────────────
-function countOtherExperiences() {
-    if (!SEL.otherExpItems) return 0;
-    return document.querySelectorAll(SEL.otherExpItems).length;
-}
-
-function countEmploymentEntries() {
-    if (!SEL.employmentItems) return 0;
-    return document.querySelectorAll(SEL.employmentItems).length;
 }
 
 function getOtherExpAddBtn() {
@@ -204,7 +244,7 @@ function getOtherExpAddBtn() {
 }
 
 // ──────────────────────────────────────────────────────────────
-// Delete one other experience entry (click delete → wait for modal → confirm)
+// Delete one other experience entry
 // ──────────────────────────────────────────────────────────────
 async function deleteOneOtherExperience(notify, index) {
     const btn = document.querySelector(SEL.otherExpDeleteBtn);
@@ -222,7 +262,7 @@ async function deleteOneOtherExperience(notify, index) {
 }
 
 // ──────────────────────────────────────────────────────────────
-// Delete one employment entry (click delete → wait for modal → confirm)
+// Delete one employment entry
 // ──────────────────────────────────────────────────────────────
 async function deleteOneEmploymentEntry(notify, index) {
     const btn = document.querySelector(SEL.employmentDeleteBtn);
@@ -289,7 +329,7 @@ async function addOneOtherExperience(entry, loose1000) {
 
     const saveBtn = await waitForEl(SEL.otherExpSaveBtn);
     await humanClick(saveBtn);
-    await safeDelay(700, 1400);
+    await waitForSaveComplete();
 }
 
 // ──────────────────────────────────────────────────────────────
@@ -314,8 +354,12 @@ async function addOneEmploymentEntry(entry) {
     await typeAndPickFirst(countryInput, country);
     await safeDelay(300, 600);
 
+    // The job title combobox (type="search", role="combobox") does not
+    // respond to synthetic React events. nativeInsert uses execCommand
+    // which fires genuine browser-level input events that the field
+    // cannot ignore.
     const titleInput = await waitForEl(SEL.employmentTitleInput);
-    await typeAndPickFirst(titleInput, entry.title);
+    await nativeInsert(titleInput, entry.title);
     await safeDelay(300, 600);
 
     await pickDropdownOption(SEL.employmentMonthToggle, 'Jan');
@@ -331,12 +375,11 @@ async function addOneEmploymentEntry(entry) {
 
     const saveBtn = await waitForEl(SEL.employmentSaveBtn);
     await humanClick(saveBtn);
-    await safeDelay(700, 1400);
+    await waitForSaveComplete();
 }
 
 // ──────────────────────────────────────────────────────────────
 // Run: Other Experiences
-// shouldDelete: boolean decided by the user via confirm() in main.js
 // ──────────────────────────────────────────────────────────────
 async function runOtherExperiences(parsedData, notify, onDone, resumeFromIndex = 0, shouldDelete = false) {
     if (!parsedData.otherExp.length) {
@@ -382,7 +425,6 @@ async function runOtherExperiences(parsedData, notify, onDone, resumeFromIndex =
 
 // ──────────────────────────────────────────────────────────────
 // Run: Employment History
-// shouldDelete: boolean decided by the user via confirm() in main.js
 // ──────────────────────────────────────────────────────────────
 async function runEmploymentHistory(parsedData, notify, onDone, resumeFromIndex = 0, shouldDelete = false) {
     if (!parsedData.employment.length) {
@@ -422,7 +464,7 @@ async function runEmploymentHistory(parsedData, notify, onDone, resumeFromIndex 
 }
 
 // ──────────────────────────────────────────────────────────────
-// Check for a saved job
+// Saved job helpers
 // ──────────────────────────────────────────────────────────────
 async function checkForSavedJob() { return await loadJobState(); }
 async function discardSavedJob()  { await clearJobState(); }

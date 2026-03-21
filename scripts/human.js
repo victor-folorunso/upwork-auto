@@ -16,7 +16,6 @@ function isInViewport(el) {
 }
 
 // Scroll toward an element only if it isn't already visible.
-// Checks AUTO.aborted between scroll steps so Stop interrupts immediately.
 async function humanScroll(el) {
     if (isInViewport(el)) return;
 
@@ -26,7 +25,7 @@ async function humanScroll(el) {
     const steps = 8 + Math.floor(Math.random() * 6);
 
     for (let i = 1; i <= steps; i++) {
-        if (AUTO.aborted) throw new Error('ABORTED');  // Fix #5: abort mid-scroll
+        if (AUTO.aborted) throw new Error('ABORTED');
         const p = i / steps;
         const eased = p < 0.5 ? 2 * p * p : 1 - Math.pow(-2 * p + 2, 2) / 2;
         window.scrollTo({ top: startY + distance * eased, behavior: 'instant' });
@@ -36,7 +35,8 @@ async function humanScroll(el) {
     await randomDelay(80, 200);
 }
 
-// Dispatch a React/framework-compatible input event on a field
+// Dispatch a React/framework-compatible input event on a field.
+// Used for standard inputs and textareas.
 function triggerInputEvent(el, value) {
     const proto = el instanceof HTMLTextAreaElement
         ? HTMLTextAreaElement.prototype
@@ -54,7 +54,6 @@ function triggerInputEvent(el, value) {
 }
 
 // Type into a field character by character.
-// Checks AUTO.aborted on every character so Stop interrupts immediately.
 async function humanType(el, text) {
     await humanScroll(el);
     el.focus();
@@ -65,7 +64,7 @@ async function humanType(el, text) {
     let current = '';
 
     for (const char of text) {
-        if (AUTO.aborted) throw new Error('ABORTED');  // Fix #2: abort mid-type
+        if (AUTO.aborted) throw new Error('ABORTED');
 
         current += char;
         triggerInputEvent(el, current);
@@ -84,12 +83,34 @@ async function humanType(el, text) {
 }
 
 // Paste text into a field instantly (no character-by-character delay).
-// Used for long fields like Other Experience description.
+// Used for long fields like descriptions.
 async function humanPaste(el, text) {
     await humanScroll(el);
     el.focus();
     await randomDelay(60, 150);
-    triggerInputEvent(el, text);  // Fix #3: instant paste
+    triggerInputEvent(el, text);
+    await randomDelay(200, 400);
+}
+
+// Insert text natively using execCommand.
+// This fires the same low-level browser events as physical typing,
+// which frameworks with custom event handling (like Upwork's job title
+// combobox) cannot ignore. Use for fields that don't respond to
+// triggerInputEvent.
+async function nativeInsert(el, text) {
+    await humanScroll(el);
+    el.focus();
+    el.click();
+    await randomDelay(100, 200);
+
+    // Clear existing value first
+    el.select();
+    document.execCommand('selectAll', false);
+    document.execCommand('delete', false);
+    await randomDelay(50, 100);
+
+    // Insert text as native browser input
+    document.execCommand('insertText', false, text);
     await randomDelay(200, 400);
 }
 
